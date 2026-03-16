@@ -81,8 +81,9 @@ impl Into<u32> for PTE {
 impl PTE {
     #[inline]
     fn from_pa(pa: u32) -> PTE {
-        let mask = (1 << 10) - 1;
-        PTE::from(pa & !mask)
+        let mask = (1 << 12) - 1;
+        let pte = (pa & !mask) >> 2;
+        PTE::from(pte)
     }
 
     fn set_perm(&mut self, perm: &Perm) {
@@ -185,7 +186,7 @@ impl Kmem {
         };
         let mut cursor = align_up(kernel_end as usize, PAGESIZE) as *mut u32;
         while (cursor as usize) < align_down(RAMEND, PAGESIZE) {
-            uart_print(format!("0x{:x} 0x{:x}\n", cursor as u32, RAMEND).as_str());
+            // uart_print(format!("0x{:x} 0x{:x}\n", cursor as u32, RAMEND).as_str());
             kmem.kfree(cursor);
             cursor = cursor.wrapping_byte_add(PAGESIZE);
         }
@@ -229,7 +230,7 @@ impl Kvm {
             KERNEL_START,
             KERNEL_START,
             end_text - KERNEL_START,
-            PTE_X | PTE_W,
+            PTE_X | PTE_R,
         )?;
 
         // kernel data and ram after kernel
@@ -296,7 +297,7 @@ fn walk(memory: &mut Kmem, pagetree: *mut u32, virt_a: usize, alloc: bool) -> Re
     let pte = PTE::from(pte_u32);
 
     if pte.v {
-        a = (pte.ppn << 10) as *mut u32;
+        a = (pte.ppn << 12) as *mut u32;
     } else {
         if !alloc {
             return Err(());

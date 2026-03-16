@@ -6,7 +6,7 @@ mod csr;
 mod kmemory;
 
 extern crate alloc;
-use alloc::format;
+use alloc::{format, vec};
 use buddy_system_allocator::LockedHeap;
 
 use core::arch::global_asm;
@@ -65,7 +65,6 @@ pub extern "C" fn main() -> ! {
             .init(HEAP.as_mut_ptr() as usize, HEAPSIZE);
     }
 
-
     let mut memory = kmemory::Kmem::kalloc_init();
     let mut kvm = kmemory::Kvm::init(&mut memory).unwrap();
 
@@ -86,13 +85,19 @@ pub extern "C" fn main() -> ! {
 
     uart_print("Virt started\n");
 
-    loop {}
+    let mut fib = vec![0, 1];
+
+    loop {
+        let id = fib.len();
+        let a = fib[id - 1] + fib[id - 2];
+        let msg = format!("{}\n", a);
+        fib.push(a);
+        uart_print(msg.as_str());
+    }
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     uart_print("Something went wrong.\n");
-    let msg = format!("{:?}", _info);
-    uart_print(msg.as_str());
     loop {}
 }

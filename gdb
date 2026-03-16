@@ -4,5 +4,5 @@ symbol-file ~/Documents/rust-baremetal/rust-baremetal/target/riscv32ima-unknown-
 dashboard -layout variables stack
 layout asm
 layout split 
-break main
+break main::main
 c
