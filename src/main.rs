@@ -3,17 +3,22 @@
 #![feature(ascii_char)]
 
 mod csr;
-mod kmemory;
+mod process;
+mod trap;
+pub mod virtmemory;
 
 extern crate alloc;
 use alloc::{format, vec};
 use buddy_system_allocator::LockedHeap;
 
-use core::arch::global_asm;
+use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
-use crate::kmemory::RAMEND;
+use crate::virtmemory::RAMEND;
+use crate::trap::init_trap;
+
+const HEAPSIZE: usize = 0x10000;
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
@@ -39,7 +44,7 @@ global_asm!(
 );
 
 fn uart_print(message: &str) {
-    let uart = kmemory::UART as *mut u8;
+    let uart = virtmemory::UART as *mut u8;
     for c in message.bytes() {
         unsafe {
             write_volatile(uart, c);
@@ -48,8 +53,8 @@ fn uart_print(message: &str) {
 }
 
 struct Kernel {
-    // memory: kmemory::Kmem,
-    kvm: kmemory::Kvm,
+    kvm: virtmemory::Kvm,
+    // processes: [process::Process; 8]
 }
 
 #[allow(static_mut_refs)]
@@ -58,37 +63,32 @@ pub extern "C" fn main() -> ! {
     uart_print("Hello, world!\n");
 
     unsafe {
-        let ekernel = &kmemory::ekernel as *const u32 as usize;
+        let ekernel = &virtmemory::ekernel as *const u32 as usize;
         HEAP_ALLOCATOR.lock().init(ekernel, RAMEND - ekernel);
     }
 
-    let msg = unsafe {
-        format!(
-            "etext: 0x{:x}, ekernel: 0x{:x}, _STACK_PTR: 0x{:x} \n",
-            &kmemory::etext as *const u32 as u32,
-            &kmemory::ekernel as *const u32 as u32,
-            &kmemory::_STACK_PTR as *const u32 as u32,
-        )
-    };
-    uart_print(&msg);
-
-    let kvm = kmemory::Kvm::init().unwrap();
+    let kvm = virtmemory::Kvm::init().unwrap();
 
     let kernel = Kernel { kvm };
+    init_trap();
 
-    kernel.kvm.start_kvm();
+    // let msg = unsafe {
+    //     format!(
+    //         "etext: 0x{:x}, ekernel: 0x{:x}, _STACK_PTR: 0x{:x}\n",
+    //         &kmemory::etext as *const u32 as u32,
+    //         &kmemory::ekernel as *const u32 as u32,
+    //         &kmemory::_STACK_PTR as *const u32 as u32
+    //     )
+    // };
+    // let tmp = msg.as_str();
+    // uart_print(tmp);
 
-    uart_print("Virt started\n");
+    // kernel.kvm.start_kvm();
 
-    let mut fib = vec![0, 1];
+    // uart_print("Virt started\n");
 
-    loop {
-        let id = fib.len();
-        let a = fib[id - 1] + fib[id - 2];
-        let msg = format!("{}\n", a);
-        fib.push(a);
-        uart_print(msg.as_str());
-    }
+    unsafe { asm!("unimp") };
+    loop {}
 }
 
 #[panic_handler]
