@@ -9,6 +9,7 @@ MEMORY {
 SECTIONS {
   .text.boot : {
     *(.text.boot)
+    . = ALIGN(4);
   } > ram
 
   .text : {
@@ -18,20 +19,24 @@ SECTIONS {
   PROVIDE(etext = .);
 
   .rodata : {
-    *(.rodata)
+    *(.rodata*)
+    . = ALIGN(4);
   } > ram
 
   .data : {
-    *(.data)
+    *(.data*)
+    . = ALIGN(4);
   } > ram
 
   .bss : {
-    *(.bss)
+    *(.bss*)
+    . = ALIGN(4);
   } > ram
 
   . = ALIGN(8);
   . = . + 4096;
   PROVIDE(_STACK_PTR = .);
   . = . + 32;
+  . = ALIGN(0x1000); 
   PROVIDE(ekernel = .);
 }
