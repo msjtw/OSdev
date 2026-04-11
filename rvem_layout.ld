@@ -14,7 +14,9 @@ SECTIONS {
 
   .text : {
     *(.text)
+    . = ALIGN(4);
   } > ram
+
   . = ALIGN(0x1000); 
   PROVIDE(etext = .);
 

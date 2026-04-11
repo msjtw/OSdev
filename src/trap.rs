@@ -71,20 +71,23 @@ pub extern "C" fn kernelvec() {
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(naked)]
+pub extern "C" fn uservec() {
+    naked_asm!("call spin");
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn kerneltrap() {
-    uart_print("TRAP\n");
     unsafe {
         let sepc = read_csr!(sepc);
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
 
-        let msg = format!("TRAP sepc=0x{:08x}\n", sepc);
+        let msg = format!(
+            "TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
+            sepc, sstatus, scause
+        );
         uart_print(msg.as_str());
-        let msg = format!("TRAP sstaus={}\n", sstatus);
-        uart_print(msg.as_str());
-        let msg = format!("TRAP scause=0x{:x}\n", scause);
-        uart_print(msg.as_str());
-        uart_print("TRAP\n");
-        panic!();
+        loop {}
     }
 }

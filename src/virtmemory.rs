@@ -1,5 +1,7 @@
-use core::alloc::{GlobalAlloc, Layout};
-
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    arch::asm,
+};
 
 use crate::{HEAP_ALLOCATOR, write_csr};
 
@@ -218,7 +220,11 @@ impl Kvm {
             ppn,
         };
         let satp: u32 = satp.into();
-        unsafe { write_csr!(satp, satp) };
+        unsafe {
+            asm!("sfence.vma zero, zero");
+            write_csr!(satp, satp);
+            asm!("sfence.vma zero, zero");
+        };
     }
 
     // Cretae PTEs for translaition virt -> phys
@@ -258,8 +264,6 @@ impl Uvm {
     }
 
     fn dealloc() {}
-
-    // pub fn load(&mut self) -> Result<(), ()> {}
 }
 
 fn mmap(pagetree: *mut u32, virt: usize, phys: usize, size: usize, perm: u32) -> Result<(), ()> {

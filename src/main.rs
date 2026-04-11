@@ -8,17 +8,17 @@ mod trap;
 pub mod virtmemory;
 
 extern crate alloc;
-use alloc::{format, vec};
+use alloc::boxed::Box;
+use alloc::format;
 use buddy_system_allocator::LockedHeap;
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
-use crate::virtmemory::RAMEND;
+use crate::process::Process;
 use crate::trap::init_trap;
-
-const HEAPSIZE: usize = 0x10000;
+use crate::virtmemory::RAMEND;
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
@@ -54,7 +54,7 @@ fn uart_print(message: &str) {
 
 struct Kernel {
     kvm: virtmemory::Kvm,
-    // processes: [process::Process; 8]
+    process_table: [process::Process; 8],
 }
 
 #[allow(static_mut_refs)]
@@ -69,7 +69,10 @@ pub extern "C" fn main() -> ! {
 
     let kvm = virtmemory::Kvm::init().unwrap();
 
-    let kernel = Kernel { kvm };
+    let kernel = Box::new(Kernel {
+        kvm,
+        process_table: [Process::default(); 8],
+    });
     init_trap();
 
     // let msg = unsafe {
@@ -83,9 +86,11 @@ pub extern "C" fn main() -> ! {
     // let tmp = msg.as_str();
     // uart_print(tmp);
 
-    // kernel.kvm.start_kvm();
+    kernel.kvm.start_kvm();
 
-    // uart_print("Virt started\n");
+    uart_print("Virt started\n");
+    let bytes = include_bytes!("../../user_proc/shell.bin");
+    uart_print(&format!("{:?}", bytes));
 
     unsafe { asm!("unimp") };
     loop {}
