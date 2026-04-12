@@ -64,7 +64,9 @@ pub extern "C" fn main() -> ! {
 
     unsafe {
         let ekernel = &virtmemory::ekernel as *const u32 as usize;
-        HEAP_ALLOCATOR.lock().init(ekernel, RAMEND - ekernel);
+        HEAP_ALLOCATOR
+            .lock()
+            .init(ekernel, RAMEND as usize - ekernel);
     }
 
     let kvm = virtmemory::Kvm::init().unwrap();

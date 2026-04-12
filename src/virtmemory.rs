@@ -11,15 +11,17 @@ unsafe extern "C" {
     pub static _STACK_PTR: u32;
 }
 
-const PAGESIZE: usize = 4 * 1024;
-const RAMSIZE: usize = 62 * 1024 * 1024;
-const RAMSTART: usize = 0x80200000;
-pub const RAMEND: usize = RAMSTART + RAMSIZE;
+const PAGESIZE: u32 = 4 * 1024;
+const RAMSIZE: u32 = 62 * 1024 * 1024;
+const RAMSTART: u32 = 0x80200000;
+pub const RAMEND: u32 = RAMSTART + RAMSIZE;
 
-const KERNEL_START: usize = 0x80200000;
-pub const UART: usize = 0x10000000;
+const KERNEL_START: u32 = 0x80200000;
+const USER_START: u32 = 0x80000000;
+pub const UART: u32 = 0x10000000;
 
-const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGESIZE, PAGESIZE) };
+const PAGE_LAYOUT: Layout =
+    unsafe { Layout::from_size_align_unchecked(PAGESIZE as usize, PAGESIZE as usize) };
 
 const PTE_R: u32 = 0b10;
 const PTE_W: u32 = 0b100;
@@ -189,11 +191,11 @@ impl Kvm {
         // map all sections
 
         // uart
-        mmap(kvm.pagetree, UART, UART, PAGESIZE, PTE_R | PTE_W)?;
+        map(kvm.pagetree, UART, UART, PAGESIZE, PTE_R | PTE_W)?;
 
         // kernel text
-        let end_text = unsafe { &etext } as *const u32 as usize;
-        mmap(
+        let end_text = unsafe { &etext } as *const u32 as u32;
+        map(
             kvm.pagetree,
             KERNEL_START,
             KERNEL_START,
@@ -202,7 +204,7 @@ impl Kvm {
         )?;
 
         // kernel data and ram after kernel
-        mmap(
+        map(
             kvm.pagetree,
             end_text,
             end_text,
@@ -236,6 +238,7 @@ pub struct Uvm {
     pagetree: *mut u32,
 }
 
+// The address space is continuous and starts at virt 0x80000000
 impl Uvm {
     pub fn new() -> Result<Uvm, ()> {
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
@@ -245,15 +248,15 @@ impl Uvm {
         })
     }
 
-    // allocate new pages to size
-    // it creates virt address space from 0 to size
+    // grow new pages to size
+    // it creates virt address space from USERBASE to size
     pub fn alloc(&mut self, size: u32, perm: u32) -> Result<u32, ()> {
         while self.size < size {
             let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-            mmap(
+            map(
                 self.pagetree,
-                self.size as usize,
-                page as usize,
+                self.size as u32,
+                page as u32,
                 PAGESIZE,
                 perm | PTE_U,
             )?;
@@ -263,10 +266,20 @@ impl Uvm {
         Ok(0)
     }
 
-    fn dealloc() {}
+    // shrink virt address space to size
+    pub fn dealloc(&mut self, size: u32) -> Result<(), ()> {
+        if size % PAGESIZE as u32 != 0 {
+            return Err(());
+        }
+
+        let newend = USER_START + size;
+        unmap(self.pagetree, newend, self.size - size, true);
+        Ok(())
+    }
 }
 
-fn mmap(pagetree: *mut u32, virt: usize, phys: usize, size: usize, perm: u32) -> Result<(), ()> {
+// map virtual memory range to physical memory range
+fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result<(), ()> {
     // TODO: tests
     // - size and virt addr aligned on page
     // - size > 0 and end < RAMEND
@@ -275,7 +288,7 @@ fn mmap(pagetree: *mut u32, virt: usize, phys: usize, size: usize, perm: u32) ->
     let mut paddr = phys;
     let vaddr_end = virt + size;
     while vaddr < vaddr_end {
-        let pte_addr = walk(pagetree, vaddr, true)?;
+        let pte_addr = walk(pagetree, vaddr, true).ok_or(())?;
         // NOTE: check for remap (I don't think it's possible)
 
         let mut pte = PTE::from_pa(paddr as u32);
@@ -290,14 +303,40 @@ fn mmap(pagetree: *mut u32, virt: usize, phys: usize, size: usize, perm: u32) ->
     Ok(())
 }
 
+// remove mappings from virt to virt+size
+fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()> {
+    if size % PAGESIZE != 0 {
+        return Err(());
+    }
+
+    let mut va = virt;
+    while va < virt + size {
+        let pte_addr = match walk(pagetree, va, true) {
+            Some(x) => x,
+            None => continue,
+        };
+        let pte = PTE::from(unsafe { pte_addr.read() });
+        if !pte.v {
+            continue;
+        }
+        if free {
+            let page = (pte.ppn << 12) as *mut u8;
+            unsafe { HEAP_ALLOCATOR.dealloc(page, PAGE_LAYOUT) };
+        }
+        unsafe { pte_addr.write(0) };
+        va += PAGESIZE;
+    }
+    Ok(())
+}
+
 // returns leaf pte addr for given virtual address
 // with support for megapages
-fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Result<*mut u32, ()> {
+fn walk(pagetree: *mut u32, virt_a: u32, alloc: bool) -> Option<*mut u32> {
     let va = VA::from(virt_a as u32);
 
     let mut a = pagetree;
 
-    let index = va.vpn(1).ok_or(())?;
+    let index = va.vpn(1)?;
     let pte_addr = a.wrapping_add(index as usize);
     let pte_u32 = unsafe { pte_addr.read() };
 
@@ -307,7 +346,7 @@ fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Result<*mut u32, ()> 
         a = (pte.ppn << 12) as *mut u32;
     } else {
         if !alloc {
-            return Err(());
+            return None;
         }
         let new_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
         let mut new_pte = PTE::from_pa(new_page as u32);
@@ -316,18 +355,18 @@ fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Result<*mut u32, ()> 
         a = new_page;
     }
 
-    let index = va.vpn(0).ok_or(())?;
+    let index = va.vpn(0)?;
     let pte_addr = a.wrapping_add(index as usize);
 
-    Ok(pte_addr)
+    Some(pte_addr)
 }
 
-fn align_up(val: usize, alignment: usize) -> usize {
+fn align_up(val: u32, alignment: u32) -> u32 {
     let tmp = val + alignment - 1;
     align_down(tmp, alignment)
 }
 
-fn align_down(val: usize, alignment: usize) -> usize {
+fn align_down(val: u32, alignment: u32) -> u32 {
     let rem = val % alignment;
     val - rem
 }

@@ -41,4 +41,5 @@ impl Process {
         }
     }
 }
-//
+
+fn load() {}
