@@ -1,6 +1,6 @@
 use core::default;
 
-use crate::virtmemory;
+use crate::virtmemory::{self, PTE_R, PTE_X, Uvm};
 
 enum ProcState {
     UNUSED,
@@ -33,13 +33,20 @@ impl Default for Process {
 }
 
 impl Process {
-    pub fn new(memory: &mut virtmemory::Kmem) -> Self {
-        Self {
-            pid: None, // TODO: PID
-            state: ProcState::UNUSED,
-            kstack: page,
-        }
-    }
+    fn free(&mut self) {}
 }
 
-fn load() {}
+pub fn kexec(proc: &mut Process, img: &[u8]) -> Result<(), ()> {
+    let mut new_process = Process::default();
+    proc.free();
+
+    let pagetree = Uvm::new()?;
+    pagetree.alloc(img.len() as u32, PTE_R | PTE_R | PTE_X);
+
+    *proc = new_process;
+    Ok(())
+}
+
+fn load(ptree: &mut Uvm, va: u32, img: &[u8]){
+
+}

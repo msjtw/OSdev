@@ -23,10 +23,10 @@ pub const UART: u32 = 0x10000000;
 const PAGE_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(PAGESIZE as usize, PAGESIZE as usize) };
 
-const PTE_R: u32 = 0b10;
-const PTE_W: u32 = 0b100;
-const PTE_X: u32 = 0b1000;
-const PTE_U: u32 = 0b10000;
+pub const PTE_R: u32 = 0b10;
+pub const PTE_W: u32 = 0b100;
+pub const PTE_X: u32 = 0b1000;
+pub const PTE_U: u32 = 0b10000;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
@@ -250,7 +250,7 @@ impl Uvm {
 
     // grow new pages to size
     // it creates virt address space from USERBASE to size
-    pub fn alloc(&mut self, size: u32, perm: u32) -> Result<u32, ()> {
+    pub fn alloc(&mut self, size: u32, perm: u32) -> Result<(), ()> {
         while self.size < size {
             let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
             map(
@@ -263,7 +263,7 @@ impl Uvm {
             // NOTE: need to free memory on fail
             self.size += PAGESIZE as u32
         }
-        Ok(0)
+        Ok(())
     }
 
     // shrink virt address space to size
@@ -275,6 +275,23 @@ impl Uvm {
         let newend = USER_START + size;
         unmap(self.pagetree, newend, self.size - size, true);
         Ok(())
+    }
+
+
+    // copy img to self at va
+    pub fn load(&mut self, mut va: u32, img: &[u8]) {
+        // load is executed in kernel with kernel pagetree.
+        // NOTE: va needs to be page aligned
+        if va % PAGESIZE != 0 {
+            // TODO: error
+            panic!();
+        }
+        for page in img.chunks(PAGESIZE as usize){
+            let pa = walk(self.pagetree, va, false);
+            // In kernel pa is identity mapped so pa = va
+            let pa = PTE
+            va += PAGESIZE;
+        }
     }
 }
 
@@ -304,6 +321,7 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
 }
 
 // remove mappings from virt to virt+size
+// if free it will also free the mapped pages but not the internal tree pages
 fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()> {
     if size % PAGESIZE != 0 {
         return Err(());
