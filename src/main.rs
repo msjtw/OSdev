@@ -57,11 +57,26 @@ struct Kernel {
     process_table: [process::Process; 8],
 }
 
+impl Kernel {
+    pub fn new() -> Self {
+        // TODO: init processes
+        let process_table = [Process::default(); 8];
+        Self {
+            kvm: virtmemory::Kvm::init().unwrap(),
+            process_table,
+        }
+    }
+}
+
 #[allow(static_mut_refs)]
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> ! {
     uart_print("Hello, world!\n");
 
+    // TODO: How to implement memory so all acceses dont have to be unsafe.
+    // Can I map a slice [u8] over whole avaliable ram?
+
+    // Init physical memory allocator.
     unsafe {
         let ekernel = &virtmemory::ekernel as *const u32 as usize;
         HEAP_ALLOCATOR
@@ -69,12 +84,8 @@ pub extern "C" fn main() -> ! {
             .init(ekernel, RAMEND as usize - ekernel);
     }
 
-    let kvm = virtmemory::Kvm::init().unwrap();
+    let kernel = Box::new(Kernel::new());
 
-    let kernel = Box::new(Kernel {
-        kvm,
-        process_table: [Process::default(); 8],
-    });
     init_trap();
 
     // let msg = unsafe {

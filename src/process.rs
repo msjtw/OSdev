@@ -1,7 +1,8 @@
 use core::default;
 
-use crate::virtmemory::{self, PTE_R, PTE_X, Uvm};
+use crate::virtmemory::{self, PTE_R, PTE_X, USER_START, Uvm};
 
+#[derive(Debug, Copy, Clone)]
 enum ProcState {
     UNUSED,
     USED,
@@ -14,6 +15,7 @@ enum ProcState {
 // processes are initialized on boot (state: UNUSED and kstack)
 // When new process is created pid, state and pagetable are assigned.
 //
+#[derive(Copy, Clone)]
 pub struct Process {
     pid: Option<u32>,
     state: ProcState,
@@ -40,8 +42,11 @@ pub fn kexec(proc: &mut Process, img: &[u8]) -> Result<(), ()> {
     let mut new_process = Process::default();
     proc.free();
 
-    let pagetree = Uvm::new()?;
+    let mut pagetree = Uvm::new()?;
     pagetree.alloc(img.len() as u32, PTE_R | PTE_R | PTE_X);
+    pagetree.load(USER_START, img);
+
+    new_process.pagetable = Some(pagetree);
 
     *proc = new_process;
     Ok(())

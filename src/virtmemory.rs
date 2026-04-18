@@ -1,6 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
+    intrinsics::copy_nonoverlapping,
 };
 
 use crate::{HEAP_ALLOCATOR, write_csr};
@@ -17,7 +18,7 @@ const RAMSTART: u32 = 0x80200000;
 pub const RAMEND: u32 = RAMSTART + RAMSIZE;
 
 const KERNEL_START: u32 = 0x80200000;
-const USER_START: u32 = 0x80000000;
+pub const USER_START: u32 = 0x80000000;
 pub const UART: u32 = 0x10000000;
 
 const PAGE_LAYOUT: Layout =
@@ -31,6 +32,7 @@ pub const PTE_U: u32 = 0b10000;
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 struct PTE {
+    pub pa: u32,
     pub ppn: u32,
     pub ppn1: u32,
     pub ppn0: u32,
@@ -48,6 +50,7 @@ struct PTE {
 impl From<u32> for PTE {
     fn from(pte: u32) -> Self {
         PTE {
+            pa: (pte & 0b11111111111111111111110000000000),
             ppn: (pte & 0b11111111111111111111110000000000) >> 10,
             ppn1: (pte & 0b11111111111100000000000000000000) >> 20,
             ppn0: (pte & 0b00000000000011111111110000000000) >> 10,
@@ -80,9 +83,9 @@ impl Into<u32> for PTE {
     }
 }
 
-#[allow(dead_code)]
 impl PTE {
     #[inline]
+    // get pte from physical address without permissions
     fn from_pa(pa: u32) -> PTE {
         let mask = (1 << 12) - 1;
         let pte = (pa & !mask) >> 2;
@@ -211,6 +214,21 @@ impl Kvm {
             RAMEND - end_text,
             PTE_R | PTE_W,
         )?;
+
+        // TODO: Do I need trampoline pages? 
+        // Trampoline page is mapped at the same high address in each process.
+        // stvec points to it 
+
+        // NOTE: Each process has it's own kernel stack mapped
+        // at the same high (higher than physical end) address
+        // in kernel and user address space.
+        // The mapping is required for 2 reasons:
+        // + uder each stack page we need a guard page (high address)
+        // + when changing from 
+
+        // TODO: Map kernel stacks (and allocate pages for them).
+        // the same addresses are needed here and when intializing proc table.
+
         Ok(kvm)
     }
 
@@ -233,6 +251,7 @@ impl Kvm {
     // continous virt to virt + size to continous phys to phys + size
 }
 
+#[derive(Copy, Clone)]
 pub struct Uvm {
     size: u32,
     pagetree: *mut u32,
@@ -277,21 +296,27 @@ impl Uvm {
         Ok(())
     }
 
-
     // copy img to self at va
-    pub fn load(&mut self, mut va: u32, img: &[u8]) {
+    // memory needs to be preallocated  TODO: does it really? Why can't it be allocated here?
+    pub fn load(&mut self, mut va: u32, img: &[u8]) -> Result<(), ()> {
         // load is executed in kernel with kernel pagetree.
-        // NOTE: va needs to be page aligned
         if va % PAGESIZE != 0 {
-            // TODO: error
-            panic!();
+            return Err(())
         }
-        for page in img.chunks(PAGESIZE as usize){
-            let pa = walk(self.pagetree, va, false);
-            // In kernel pa is identity mapped so pa = va
-            let pa = PTE
+        for page in img.chunks(PAGESIZE as usize) {
+            let pte = unsafe { walk(self.pagetree, va, false).ok_or(())?.read() };
+            let pte = PTE::from(pte);
+            // NOTE: This write will go through kernel pagetree,
+            // so the write address is va in kernel virt memory,
+            // but in kernel pa is identity mapped so pa = va.
+            unsafe {
+                let dst_ptr = pte.pa as *mut u8;
+                let src_ptr = page.as_ptr();
+                copy_nonoverlapping(src_ptr, dst_ptr, PAGESIZE as usize);
+            };
             va += PAGESIZE;
         }
+        Ok(())
     }
 }
 
