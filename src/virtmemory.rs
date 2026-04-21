@@ -4,7 +4,7 @@ use core::{
     intrinsics::copy_nonoverlapping,
 };
 
-use crate::{HEAP_ALLOCATOR, write_csr};
+use crate::{HEAP_ALLOCATOR, KSTACK, process::NPROC, write_csr, virtmemory};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -12,7 +12,7 @@ unsafe extern "C" {
     pub static _STACK_PTR: u32;
 }
 
-const PAGESIZE: u32 = 4 * 1024;
+pub const PAGESIZE: u32 = 4 * 1024;
 const RAMSIZE: u32 = 62 * 1024 * 1024;
 const RAMSTART: u32 = 0x80200000;
 pub const RAMEND: u32 = RAMSTART + RAMSIZE;
@@ -21,7 +21,9 @@ const KERNEL_START: u32 = 0x80200000;
 pub const USER_START: u32 = 0x80000000;
 pub const UART: u32 = 0x10000000;
 
-const PAGE_LAYOUT: Layout =
+pub const VIRT_END: u32 = u32::MAX;
+
+pub const PAGE_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(PAGESIZE as usize, PAGESIZE as usize) };
 
 pub const PTE_R: u32 = 0b10;
@@ -186,9 +188,16 @@ pub struct Kvm {
 }
 
 impl Kvm {
+    // NOTE: Top of kernel address space is:
+    // trampoline
+    // guard
+    // kernel0
+    // guard
+    // ...
+
     pub fn init() -> Result<Kvm, ()> {
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let kvm = Kvm {
+        let mut kvm = Kvm {
             pagetree: root_page,
         };
         // map all sections
@@ -215,21 +224,18 @@ impl Kvm {
             PTE_R | PTE_W,
         )?;
 
-        // TODO: Do I need trampoline pages? 
-        // Trampoline page is mapped at the same high address in each process.
-        // stvec points to it 
-
-        // NOTE: Each process has it's own kernel stack mapped
-        // at the same high (higher than physical end) address
-        // in kernel and user address space.
-        // The mapping is required for 2 reasons:
-        // + uder each stack page we need a guard page (high address)
-        // + when changing from 
-
-        // TODO: Map kernel stacks (and allocate pages for them).
-        // the same addresses are needed here and when intializing proc table.
-
         Ok(kvm)
+    }
+
+    // maps and allocates kernel stacks
+    pub fn map_kstack(&mut self, pa: u32, va: u32) {
+            map(
+                self.pagetree,
+                va,
+                pa,
+                PAGESIZE,
+                PTE_R | PTE_W,
+            );
     }
 
     pub fn start_kvm(&self) {
@@ -301,7 +307,7 @@ impl Uvm {
     pub fn load(&mut self, mut va: u32, img: &[u8]) -> Result<(), ()> {
         // load is executed in kernel with kernel pagetree.
         if va % PAGESIZE != 0 {
-            return Err(())
+            return Err(());
         }
         for page in img.chunks(PAGESIZE as usize) {
             let pte = unsafe { walk(self.pagetree, va, false).ok_or(())?.read() };

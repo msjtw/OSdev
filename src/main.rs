@@ -3,6 +3,7 @@
 #![feature(ascii_char)]
 
 mod csr;
+mod kernel;
 mod process;
 mod trap;
 pub mod virtmemory;
@@ -16,7 +17,8 @@ use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
-use crate::process::Process;
+use crate::kernel::Kernel;
+use crate::process::{Process, kexec};
 use crate::trap::init_trap;
 use crate::virtmemory::RAMEND;
 
@@ -42,28 +44,12 @@ global_asm!(
         j spin
     "
 );
-
+ 
 fn uart_print(message: &str) {
     let uart = virtmemory::UART as *mut u8;
     for c in message.bytes() {
         unsafe {
             write_volatile(uart, c);
-        }
-    }
-}
-
-struct Kernel {
-    kvm: virtmemory::Kvm,
-    process_table: [process::Process; 8],
-}
-
-impl Kernel {
-    pub fn new() -> Self {
-        // TODO: init processes
-        let process_table = [Process::default(); 8];
-        Self {
-            kvm: virtmemory::Kvm::init().unwrap(),
-            process_table,
         }
     }
 }
@@ -74,7 +60,7 @@ pub extern "C" fn main() -> ! {
     uart_print("Hello, world!\n");
 
     // TODO: How to implement memory so all acceses dont have to be unsafe.
-    // Can I map a slice [u8] over whole avaliable ram?
+    //       Can I map a slice [u8] over whole avaliable ram?
 
     // Init physical memory allocator.
     unsafe {
@@ -84,29 +70,18 @@ pub extern "C" fn main() -> ! {
             .init(ekernel, RAMEND as usize - ekernel);
     }
 
-    let kernel = Box::new(Kernel::new());
+    let mut kernel = Box::new(Kernel::default());
 
+    kernel.initproc(8);
     init_trap();
-
-    // let msg = unsafe {
-    //     format!(
-    //         "etext: 0x{:x}, ekernel: 0x{:x}, _STACK_PTR: 0x{:x}\n",
-    //         &kmemory::etext as *const u32 as u32,
-    //         &kmemory::ekernel as *const u32 as u32,
-    //         &kmemory::_STACK_PTR as *const u32 as u32
-    //     )
-    // };
-    // let tmp = msg.as_str();
-    // uart_print(tmp);
-
     kernel.kvm.start_kvm();
 
     uart_print("Virt started\n");
     let bytes = include_bytes!("../../user_proc/shell.bin");
-    uart_print(&format!("{:?}", bytes));
 
-    unsafe { asm!("unimp") };
-    loop {}
+    kexec(&mut kernel.process_table[0], bytes);
+
+    process::scheduler(&mut kernel);
 }
 
 #[panic_handler]

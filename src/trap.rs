@@ -88,6 +88,9 @@ extern "C" fn kerneltrap() {
             sepc, sstatus, scause
         );
         uart_print(msg.as_str());
+
+        // TODO: ca
+
         loop {}
     }
 }
