@@ -92,7 +92,12 @@ pub extern "C" fn main() -> ! {
     // kexec(&mut kernel.process_table[0], bytes);
 
     // process::scheduler(&mut kernel);
-    loop {}
+    loop {
+        for _ in 0..10_000 {
+            unsafe { asm!("nop") };
+        }
+        print!("MAIN\n");
+    }
 }
 
 #[panic_handler]

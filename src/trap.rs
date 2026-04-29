@@ -2,10 +2,36 @@ use core::arch::{asm, naked_asm};
 
 use alloc::format;
 
-use crate::{read_csr, uart_print, write_csr};
+use crate::{print, read_csr, uart_print, write_csr};
+
+const SIE_SEIE: usize = 0b101000;
+const SIE_STIE: usize = 0b001000;
 
 pub fn init_trap() {
-    unsafe { write_csr!(stvec, kernelvec as *const () as u32) };
+    unsafe {
+        write_csr!(stvec, kernelvec as *const () as u32);
+
+        // NOTE: Request first timer interrupt.
+        // The sstc extension was enabled by openSBI
+
+        // Enable timer and external interrupts
+
+        let time = read_csr!(time);
+        print!("time: {}\n", time);
+        print!("time: {}\n", time + 1000000);
+        write_csr!(stimecmp, time + 1000000);
+
+        let sie = read_csr!(sie);
+        print!("sie: {:b}\n", sie);
+        write_csr!(sie, sie | SIE_SEIE | SIE_STIE);
+        let sie = read_csr!(sie);
+        print!("sie: {:b}\n", sie);
+
+        let sstatus = read_csr!(sstatus);
+        write_csr!(sstatus, sstatus | 0b10);
+        let sstatus = read_csr!(sstatus);
+        print!("sstatus: {:b}\n", sstatus);
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -83,11 +109,21 @@ extern "C" fn kerneltrap() {
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
 
-        crate::print!("TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
-            sepc, sstatus, scause);
+        print!(
+            "TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
+            sepc, sstatus, scause
+        );
 
-        // TODO: ca
+        match scause {
+            0x80000005 => {
+                let time = read_csr!(time);
+                print!("time: 0x{:x}, next timer on: 0x{:x}\n", time, time + 1000000);
+                write_csr!(stimecmp, time + 1000000);
+            }
+            _ => panic!(),
+        }
 
-        loop {}
+        write_csr!(sepc, sepc);
+        write_csr!(sstatus, sstatus);
     }
 }
