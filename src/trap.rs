@@ -83,11 +83,8 @@ extern "C" fn kerneltrap() {
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
 
-        let msg = format!(
-            "TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
-            sepc, sstatus, scause
-        );
-        uart_print(msg.as_str());
+        crate::print!("TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
+            sepc, sstatus, scause);
 
         // TODO: ca
 

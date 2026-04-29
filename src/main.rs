@@ -44,7 +44,17 @@ global_asm!(
         j spin
     "
 );
- 
+
+#[macro_export]
+macro_rules! print {
+    () => {
+        $crate::uart_print("")
+    };
+    ($($arg:tt)*) => {{
+        $crate::uart_print(&format!($($arg)*))
+    }};
+}
+
 fn uart_print(message: &str) {
     let uart = virtmemory::UART as *mut u8;
     for c in message.bytes() {
@@ -57,8 +67,6 @@ fn uart_print(message: &str) {
 #[allow(static_mut_refs)]
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> ! {
-    uart_print("Hello, world!\n");
-
     // TODO: How to implement memory so all acceses dont have to be unsafe.
     //       Can I map a slice [u8] over whole avaliable ram?
 
@@ -70,23 +78,25 @@ pub extern "C" fn main() -> ! {
             .init(ekernel, RAMEND as usize - ekernel);
     }
 
+    print!("Hello world\n");
+
     let mut kernel = Box::new(Kernel::default());
 
-    kernel.initproc(8);
+    // kernel.initproc(8);
     init_trap();
     kernel.kvm.start_kvm();
 
-    uart_print("Virt started\n");
-    let bytes = include_bytes!("../../user_proc/shell.bin");
+    print!("Virt started\n");
+    // let bytes = include_bytes!("../../user_proc/shell.bin");
 
-    kexec(&mut kernel.process_table[0], bytes);
+    // kexec(&mut kernel.process_table[0], bytes);
 
-    process::scheduler(&mut kernel);
+    // process::scheduler(&mut kernel);
+    loop {}
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let msg = format!("Something went wrong. {:?}\n", info);
-    uart_print(msg.as_str());
+    print!("Something went wrong. {:?}\n", info);
     loop {}
 }

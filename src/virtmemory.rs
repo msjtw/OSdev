@@ -182,9 +182,14 @@ impl Into<u32> for PA {
     }
 }
 
-#[derive(Default)]
 pub struct Kvm {
     pagetree: *mut u32,
+}
+
+impl Default for Kvm {
+    fn default() -> Self {
+        Kvm::init().unwrap()
+    }
 }
 
 impl Kvm {
@@ -197,7 +202,7 @@ impl Kvm {
 
     pub fn init() -> Result<Kvm, ()> {
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let mut kvm = Kvm {
+        let kvm = Kvm {
             pagetree: root_page,
         };
         // map all sections

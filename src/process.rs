@@ -70,7 +70,7 @@ pub fn scheduler(kernel: &mut Kernel) -> ! {
             if proc.state == ProcState::RUNNABLE {
                 proc.state = ProcState::RUNNING;
                 // TODO: set curr cpu process as proc
-                switch();
+                // switch();
             }
         }
     }
