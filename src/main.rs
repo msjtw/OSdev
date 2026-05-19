@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(ascii_char)]
 
 mod csr;
 mod kernel;
@@ -82,16 +81,20 @@ pub extern "C" fn main() -> ! {
 
     let mut kernel = Box::new(Kernel::default());
 
-    // kernel.initproc(8);
+    kernel.initproc(8);
     init_trap();
     kernel.kvm.start_kvm();
 
     print!("Virt started\n");
-    // let bytes = include_bytes!("../../user_proc/shell.bin");
+    let bytes = include_bytes!("../../user_proc/shell.bin");
 
-    // kexec(&mut kernel.process_table[0], bytes);
 
-    // process::scheduler(&mut kernel);
+
+    let user_p = kernel.allocproc().unwrap();
+    user_p.kexec(bytes);
+
+    // process::scheduler(kernel);
+
     loop {
         for _ in 0..10_000 {
             unsafe { asm!("nop") };

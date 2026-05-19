@@ -4,7 +4,7 @@ use core::{
     intrinsics::copy_nonoverlapping,
 };
 
-use crate::{HEAP_ALLOCATOR, KSTACK, process::NPROC, write_csr, virtmemory};
+use crate::{HEAP_ALLOCATOR, KSTACK,  write_csr, virtmemory};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -264,6 +264,7 @@ impl Kvm {
 
 #[derive(Copy, Clone)]
 pub struct Uvm {
+    begin: u32,
     size: u32,
     pagetree: *mut u32,
 }
@@ -273,9 +274,18 @@ impl Uvm {
     pub fn new() -> Result<Uvm, ()> {
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
         Ok(Uvm {
+            begin: USER_START,
             size: 0,
             pagetree: root_page,
         })
+    }
+
+    pub fn free() {
+        // FIXME: implement free
+    }
+
+    pub fn end(&self) -> u32{
+        self.begin + self.size 
     }
 
     // grow new pages to size
@@ -285,7 +295,7 @@ impl Uvm {
             let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
             map(
                 self.pagetree,
-                self.size as u32,
+                self.end(),
                 page as u32,
                 PAGESIZE,
                 perm | PTE_U,

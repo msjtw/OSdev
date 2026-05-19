@@ -4,8 +4,8 @@ use alloc::format;
 
 use crate::{print, read_csr, uart_print, write_csr};
 
-const SIE_SEIE: usize = 0b101000;
-const SIE_STIE: usize = 0b001000;
+const SIE_SEIE: usize = 1 << 9;
+const SIE_STIE: usize = 1 << 5;
 
 pub fn init_trap() {
     unsafe {
@@ -15,11 +15,8 @@ pub fn init_trap() {
         // The sstc extension was enabled by openSBI
 
         // Enable timer and external interrupts
-
-        let time = read_csr!(time);
-        print!("time: {}\n", time);
-        print!("time: {}\n", time + 1000000);
-        write_csr!(stimecmp, time + 1000000);
+        // let time = read_csr!(time);
+        // write_csr!(stimecmp, time + 1_000_000);
 
         let sie = read_csr!(sie);
         print!("sie: {:b}\n", sie);
@@ -28,79 +25,211 @@ pub fn init_trap() {
         print!("sie: {:b}\n", sie);
 
         let sstatus = read_csr!(sstatus);
+        print!("sstatus: {:b}\n", sstatus);
         write_csr!(sstatus, sstatus | 0b10);
         let sstatus = read_csr!(sstatus);
         print!("sstatus: {:b}\n", sstatus);
     }
 }
 
-#[unsafe(no_mangle)]
 #[unsafe(naked)]
 pub extern "C" fn kernelvec() {
     naked_asm!(
         "
         .align 4
-            # make room to save registers.
-            addi sp, sp, -256
+        # make room to save registers.
+        addi sp, sp, -256
 
-            # save caller-saved registers.
-            sw ra, 0(sp)
-            # sw sp, 8(sp)
-            sw gp, 16(sp)
-            sw tp, 24(sp)
-            sw t0, 32(sp)
-            sw t1, 40(sp)
-            sw t2, 48(sp)
-            sw a0, 72(sp)
-            sw a1, 80(sp)
-            sw a2, 88(sp)
-            sw a3, 96(sp)
-            sw a4, 104(sp)
-            sw a5, 112(sp)
-            sw a6, 120(sp)
-            sw a7, 128(sp)
-            sw t3, 216(sp)
-            sw t4, 224(sp)
-            sw t5, 232(sp)
-            sw t6, 240(sp)
+        # save caller-saved registers.
+        sw ra, 0(sp)
+        # sw sp, 8(sp)
+        sw gp, 16(sp)
+        sw tp, 24(sp)
+        sw t0, 32(sp)
+        sw t1, 40(sp)
+        sw t2, 48(sp)
+        sw a0, 72(sp)
+        sw a1, 80(sp)
+        sw a2, 88(sp)
+        sw a3, 96(sp)
+        sw a4, 104(sp)
+        sw a5, 112(sp)
+        sw a6, 120(sp)
+        sw a7, 128(sp)
+        sw t3, 216(sp)
+        sw t4, 224(sp)
+        sw t5, 232(sp)
+        sw t6, 240(sp)
 
-            # call the C trap handler in trap.c
-            call kerneltrap
+        # call the C trap handler in trap.c
+        call kerneltrap
 
-            # restore registers.
-            lw ra, 0(sp)
-            # lw sp, 8(sp)
-            lw gp, 16(sp)
-            # not tp (contains hartid), in case we moved CPUs
-            lw t0, 32(sp)
-            lw t1, 40(sp)
-            lw t2, 48(sp)
-            lw a0, 72(sp)
-            lw a1, 80(sp)
-            lw a2, 88(sp)
-            lw a3, 96(sp)
-            lw a4, 104(sp)
-            lw a5, 112(sp)
-            lw a6, 120(sp)
-            lw a7, 128(sp)
-            lw t3, 216(sp)
-            lw t4, 224(sp)
-            lw t5, 232(sp)
-            lw t6, 240(sp)
+        # restore registers.
+        lw ra, 0(sp)
+        # lw sp, 8(sp)
+        lw gp, 16(sp)
+        # not tp (contains hartid), in case we moved CPUs
+        lw t0, 32(sp)
+        lw t1, 40(sp)
+        lw t2, 48(sp)
+        lw a0, 72(sp)
+        lw a1, 80(sp)
+        lw a2, 88(sp)
+        lw a3, 96(sp)
+        lw a4, 104(sp)
+        lw a5, 112(sp)
+        lw a6, 120(sp)
+        lw a7, 128(sp)
+        lw t3, 216(sp)
+        lw t4, 224(sp)
+        lw t5, 232(sp)
+        lw t6, 240(sp)
 
-            addi sp, sp, 256
+        addi sp, sp, 256
 
-            # return to whatever we were doing in the kernel.
-            sret
+        # return to whatever we were doing in the kernel.
+        sret
         "
     );
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(naked)]
-pub extern "C" fn uservec() {
-    naked_asm!("call spin");
-}
+// #[unsafe(naked)]
+// pub extern "C" fn uservec() {
+//     naked_asm!(
+//         "
+//         #
+//         # trap.c sets stvec to point here, so
+//         # traps from user space start here,
+//         # in supervisor mode, but with a
+//         # user page table.
+//         #
+//
+//         # save user a0 in sscratch so
+//         # a0 can be used to get at TRAPFRAME.
+//         csrw sscratch, a0
+//
+//         # each process has a separate p->trapframe memory area,
+//         # but it's mapped to the same virtual address
+//         # (TRAPFRAME) in every process's user page table.
+//         li a0, TRAPFRAME
+//
+//         # save the user registers in TRAPFRAME
+//         sw ra, 40(a0)
+//         sw sp, 48(a0)
+//         sw gp, 56(a0)
+//         sw tp, 64(a0)
+//         sw t0, 72(a0)
+//         sw t1, 80(a0)
+//         sw t2, 88(a0)
+//         sw s0, 96(a0)
+//         sw s1, 104(a0)
+//         sw a1, 120(a0)
+//         sw a2, 128(a0)
+//         sw a3, 136(a0)
+//         sw a4, 144(a0)
+//         sw a5, 152(a0)
+//         sw a6, 160(a0)
+//         sw a7, 168(a0)
+//         sw s2, 176(a0)
+//         sw s3, 184(a0)
+//         sw s4, 192(a0)
+//         sw s5, 200(a0)
+//         sw s6, 208(a0)
+//         sw s7, 216(a0)
+//         sw s8, 224(a0)
+//         sw s9, 232(a0)
+//         sw s10, 240(a0)
+//         sw s11, 248(a0)
+//         sw t3, 256(a0)
+//         sw t4, 264(a0)
+//         sw t5, 272(a0)
+//         sw t6, 280(a0)
+//
+//         # save the user a0 in p->trapframe->a0
+//         csrr t0, sscratch
+//         sw t0, 112(a0)
+//
+//         # initialize kernel stack pointer, from p->trapframe->kernel_sp
+//         lw sp, 8(a0)
+//
+//         # make tp holw the current hartid, from p->trapframe->kernel_hartid
+//         lw tp, 32(a0)
+//
+//         # load the address of usertrap(), from p->trapframe->kernel_trap
+//         lw t0, 16(a0)
+//
+//         # fetch the kernel page table address, from p->trapframe->kernel_satp.
+//         lw t1, 0(a0)
+//
+//         # wait for any previous memory operations to complete, so that
+//         # they use the user page table.
+//         sfence.vma zero, zero
+//
+//         # install the kernel page table.
+//         csrw satp, t1
+//
+//         # flush now-stale user entries from the TLB.
+//         sfence.vma zero, zero
+//
+//         # call usertrap()
+//         jalr t0 "
+//     );
+// }
+//
+// #[unsafe(naked)]
+// pub extern "C" fn userret(satp: u32) {
+//     naked_asm!(
+//         "
+//         # usertrap() returns here, with user satp in a0.
+//         # return from kernel to user.
+//
+//         # switch to the user page table.
+//         sfence.vma zero, zero
+//         csrw satp, a0
+//         sfence.vma zero, zero
+//
+//         li a0, TRAPFRAME
+//
+//         # restore all but a0 from TRAPFRAME
+//         lw ra, 40(a0)
+//         lw sp, 48(a0)
+//         lw gp, 56(a0)
+//         lw tp, 64(a0)
+//         lw t0, 72(a0)
+//         lw t1, 80(a0)
+//         lw t2, 88(a0)
+//         lw s0, 96(a0)
+//         lw s1, 104(a0)
+//         lw a1, 120(a0)
+//         lw a2, 128(a0)
+//         lw a3, 136(a0)
+//         lw a4, 144(a0)
+//         lw a5, 152(a0)
+//         lw a6, 160(a0)
+//         lw a7, 168(a0)
+//         lw s2, 176(a0)
+//         lw s3, 184(a0)
+//         lw s4, 192(a0)
+//         lw s5, 200(a0)
+//         lw s6, 208(a0)
+//         lw s7, 216(a0)
+//         lw s8, 224(a0)
+//         lw s9, 232(a0)
+//         lw s10, 240(a0)
+//         lw s11, 248(a0)
+//         lw t3, 256(a0)
+//         lw t4, 264(a0)
+//         lw t5, 272(a0)
+//         lw t6, 280(a0)
+//
+//         # restore user a0
+//         lw a0, 112(a0)
+//
+//         # return to user mode and user pc.
+//         # prepare_return() set up sstatus and sepc.
+//         sret"
+//     );
+// }
 
 #[unsafe(no_mangle)]
 extern "C" fn kerneltrap() {
@@ -114,10 +243,15 @@ extern "C" fn kerneltrap() {
             sepc, sstatus, scause
         );
 
+        // Because trap originated in kernel it coudl
         match scause {
             0x80000005 => {
                 let time = read_csr!(time);
-                print!("time: 0x{:x}, next timer on: 0x{:x}\n", time, time + 1000000);
+                print!(
+                    "time: 0x{:x}, next timer on: 0x{:x}\n",
+                    time,
+                    time + 1000000
+                );
                 write_csr!(stimecmp, time + 1000000);
             }
             _ => panic!(),
