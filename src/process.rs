@@ -1,5 +1,13 @@
+pub mod trapframe;
+
+use core::arch::naked_asm;
+
+use alloc::boxed::Box;
+
 use crate::{
     kernel::Kernel,
+    process::trapframe::Trapframe,
+    trap::{interrupt_off, interrupt_on, userret},
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, USER_START, Uvm},
 };
 
@@ -21,6 +29,7 @@ pub enum ProcState {
     ZOMBIE,
 }
 
+#[repr(C)]
 #[derive(Copy, Clone, Default)]
 pub struct Context {
     pub ra: u32,
@@ -40,44 +49,11 @@ pub struct Context {
     s11: u32,
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct Trapframe {
-    kernel_satp: u32,
-    kernel_sp: u32,
-    trap_handler: u32,
-    epc: u32,
-    hartid: u32,
-    ra: u32,
-    sp: u32,
-    gp: u32,
-    tp: u32,
-    t0: u32,
-    t1: u32,
-    t2: u32,
-    s0: u32,
-    s1: u32,
-    a0: u32,
-    a1: u32,
-    a2: u32,
-    a3: u32,
-    a4: u32,
-    a5: u32,
-    a6: u32,
-    a7: u32,
-    s2: u32,
-    s3: u32,
-    s4: u32,
-    s5: u32,
-    s6: u32,
-    s7: u32,
-    s8: u32,
-    s9: u32,
-    s10: u32,
-    s11: u32,
-    t3: u32,
-    t4: u32,
-    t5: u32,
-    t6: u32,
+// Holds current execution state
+#[derive(Default)]
+pub struct Cpu {
+    // pub proc: &'a mut Process,
+    pub context: Context,
 }
 
 // processes are initialized on boot (state: UNUSED and kstack)
@@ -94,27 +70,28 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(n: u32) -> Process {
-        Process {
+    pub fn new(n: u32) -> Result<Process, ()> {
+        Ok(Process {
             kstack: KSTACK!(n),
+            pagetable: Some(Uvm::new()?),
             ..Default::default()
-        }
+        })
     }
 
-    fn free(&mut self) {}
+    // fn free(&mut self) {}
 
     pub fn kexec(&mut self, img: &[u8]) -> Result<(), ()> {
         let mut pagetree = Uvm::new()?;
-        pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X);
-        pagetree.load(USER_START, img);
+        pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X)?;
+        pagetree.load(USER_START, img)?;
 
-        let stack_base = pagetree.end();
+        let _stack_base = pagetree.end();
 
         // alloc guardpage
-        pagetree.alloc(PAGESIZE, 0);
+        pagetree.alloc(PAGESIZE, 0)?;
 
         // alloc user stack
-        pagetree.alloc(PAGESIZE, PTE_W | PTE_R);
+        pagetree.alloc(PAGESIZE, PTE_W | PTE_R)?;
 
         let sp = pagetree.end();
 
@@ -131,16 +108,68 @@ impl Process {
     }
 }
 
-pub fn scheduler(mut kernel: Kernel) -> ! {
+#[unsafe(naked)]
+unsafe extern "C" fn switch(c1: &mut Context, c2: &mut Context) {
+    naked_asm!(
+        "
+        sw ra, 0(a0)
+        sw sp, 4(a0)
+        sw s0, 8(a0)
+        sw s1, 12(a0)
+        sw s2, 16(a0)
+        sw s3, 20(a0)
+        sw s4, 24(a0)
+        sw s5, 28(a0)
+        sw s6, 32(a0)
+        sw s7, 36(a0)
+        sw s8, 40(a0)
+        sw s9, 44(a0)
+        sw s10, 48(a0)
+        sw s11, 52(a0)
+
+        lw ra, 0(a1)
+        lw sp, 4(a1)
+        lw s0, 8(a1)
+        lw s1, 12(a1)
+        lw s2, 16(a1)
+        lw s3, 20(a1)
+        lw s4, 24(a1)
+        lw s5, 28(a1)
+        lw s6, 32(a1)
+        lw s7, 36(a1)
+        lw s8, 40(a1)
+        lw s9, 44(a1)
+        lw s10, 48(a1)
+        lw s11, 52(a1)
+        
+        ret
+        "
+    );
+}
+
+pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
     loop {
-        for proc in &mut kernel.process_table {
+        unsafe {
+            interrupt_on();
+            interrupt_off();
+        }
+
+        for proc in kernel.process_table.iter_mut() {
             if proc.state == ProcState::RUNNABLE {
                 proc.state = ProcState::RUNNING;
                 // TODO: set curr cpu process as proc
-                // switch();
+                // kernel.cpus.proc =  proc;
+                unsafe { switch(&mut kernel.cpus.context, &mut proc.context) };
             }
         }
     }
 }
 
-pub fn forkret() {}
+pub fn forkret(proc: &Process) {
+    // TODO: exec first proc (init) here (or not)
+    prepare_return();
+    let satp = proc.pagetable.unwrap().get_satp().into();
+    userret(satp);
+}
+
+fn prepare_return() {}

@@ -4,29 +4,30 @@ use alloc::vec::Vec;
 
 use crate::{
     HEAP_ALLOCATOR, KSTACK,
-    process::{self, ProcState, Process, Trapframe, forkret},
-    virtmemory::{self, PAGE_LAYOUT, PAGESIZE, Uvm},
+    process::{Cpu, ProcState, Process, forkret, trapframe::Trapframe},
+    virtmemory::{self, PAGE_LAYOUT, Uvm},
 };
 
 #[derive(Default)]
 pub struct Kernel {
     pub kvm: virtmemory::Kvm,
+    pub cpus: Cpu,
     pub process_table: Vec<Process>,
     pub pid: u32,
 }
 
 impl Kernel {
-
     // Creates n additional processes with trapframe and kernel stack
-    pub fn initproc(&mut self, n: u32) {
+    pub fn initproc(&mut self, n: u32) -> Result<(), ()> {
         let nproc = self.process_table.len() as u32;
         for i in nproc..nproc + n {
             let kstack_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as u32 };
-            let proc = Process::new(i);
+            let proc = Process::new(i)?;
             self.kvm.map_kstack(kstack_page, KSTACK!(i));
 
             self.process_table.push(proc);
         }
+        Ok(())
     }
 
     pub fn allocproc(&mut self) -> Option<&mut Process> {

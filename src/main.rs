@@ -12,12 +12,11 @@ use alloc::boxed::Box;
 use alloc::format;
 use buddy_system_allocator::LockedHeap;
 
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
 use crate::kernel::Kernel;
-use crate::process::{Process, kexec};
 use crate::trap::init_trap;
 use crate::virtmemory::RAMEND;
 
@@ -88,19 +87,17 @@ pub extern "C" fn main() -> ! {
     print!("Virt started\n");
     let bytes = include_bytes!("../../user_proc/shell.bin");
 
-
-
     let user_p = kernel.allocproc().unwrap();
     user_p.kexec(bytes);
 
-    // process::scheduler(kernel);
+    process::scheduler(kernel);
 
-    loop {
-        for _ in 0..10_000 {
-            unsafe { asm!("nop") };
-        }
-        print!("MAIN\n");
-    }
+    // loop {
+    //     for _ in 0..10_000 {
+    //         unsafe { asm!("nop") };
+    //     }
+    //     print!("MAIN\n");
+    // }
 }
 
 #[panic_handler]
