@@ -30,16 +30,17 @@ impl Kernel {
         Ok(())
     }
 
-    pub fn allocproc(&mut self) -> Option<&mut Process> {
+    pub fn allocproc(&mut self, func: fn()) -> Option<&mut Process> {
         for p in &mut self.process_table {
             if p.state == ProcState::UNUSED {
                 p.pid = Some(self.pid);
                 self.pid += 1;
-                p.state = ProcState::USED;
+                p.state = ProcState::RUNNABLE;
                 p.trapframe = Trapframe::default();
                 p.pagetable = Some(Uvm::new().unwrap());
 
-                p.context.ra = forkret as *const u32 as u32;
+                // p.context.ra = forkret as *const u32 as u32;
+                p.context.ra = func as *const u32 as u32;
                 p.context.sp = p.kstack;
 
                 return Some(p);

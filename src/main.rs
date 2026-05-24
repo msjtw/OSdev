@@ -12,12 +12,13 @@ use alloc::boxed::Box;
 use alloc::format;
 use buddy_system_allocator::LockedHeap;
 
-use core::arch::global_asm;
+use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
 use crate::kernel::Kernel;
-use crate::trap::init_trap;
+use crate::process::{Context, Cpu, Process};
+use crate::trap::{init_trap, interrupt_off, interrupt_on};
 use crate::virtmemory::RAMEND;
 
 #[global_allocator]
@@ -25,6 +26,11 @@ static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
 
 // #[unsafe(no_mangle)]
 // unsafe extern  static STACK: [u8; 4096] = [0; 4096];
+
+static mut CPU: Cpu = Cpu {
+    current: core::ptr::null_mut(),
+    context: Context::zero(),
+};
 
 global_asm!(
     "
@@ -62,7 +68,36 @@ fn uart_print(message: &str) {
     }
 }
 
-#[allow(static_mut_refs)]
+fn proc0() {
+    let mut count = 0;
+    loop {
+        for _ in 0..100_000 {
+            unsafe { asm!("nop") };
+        }
+        print!("PROC 0 {count}\n");
+        count += 2;
+        unsafe {
+            asm!("wfi");
+            // (*CPU.current).yeld();
+        };
+    }
+}
+
+fn proc1() {
+    let mut count = 1;
+    loop {
+        for _ in 0..100_000 {
+            unsafe { asm!("nop") };
+        }
+        print!("PROC 1 {count}\n");
+        count += 2;
+        unsafe {
+            asm!("wfi");
+            // (*CPU.current).yeld();
+        };
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> ! {
     // TODO: How to implement memory so all acceses dont have to be unsafe.
@@ -80,15 +115,16 @@ pub extern "C" fn main() -> ! {
 
     let mut kernel = Box::new(Kernel::default());
 
-    kernel.initproc(8);
+    kernel.initproc(8).unwrap();
     init_trap();
     kernel.kvm.start_kvm();
 
     print!("Virt started\n");
-    let bytes = include_bytes!("../../user_proc/shell.bin");
+    // let bytes = include_bytes!("../../user_proc/shell.bin");
 
-    let user_p = kernel.allocproc().unwrap();
-    user_p.kexec(bytes);
+    let user_p0 = kernel.allocproc(proc0).unwrap();
+    let user_p1 = kernel.allocproc(proc1).unwrap();
+    // user_p.kexec(bytes).unwrap();
 
     process::scheduler(kernel);
 

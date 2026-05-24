@@ -2,7 +2,7 @@ use core::arch::naked_asm;
 
 use alloc::format;
 
-use crate::{print, read_csr, write_csr};
+use crate::{CPU, print, read_csr, write_csr};
 
 const SIE_SEIE: usize = 1 << 9;
 const SIE_STIE: usize = 1 << 5;
@@ -17,7 +17,7 @@ pub fn init_trap() {
 
         // Enable timer and external interrupts
         // let time = read_csr!(time);
-        // write_csr!(stimecmp, time + 1_000_000);
+        // write_csr!(stimecmp, time + 1_00_000);
 
         let sie = read_csr!(sie);
         print!("sie: {:b}\n", sie);
@@ -25,11 +25,11 @@ pub fn init_trap() {
         let sie = read_csr!(sie);
         print!("sie: {:b}\n", sie);
 
-        let sstatus = read_csr!(sstatus);
-        print!("sstatus: {:b}\n", sstatus);
-        write_csr!(sstatus, sstatus | 0b10);
-        let sstatus = read_csr!(sstatus);
-        print!("sstatus: {:b}\n", sstatus);
+        // let sstatus = read_csr!(sstatus);
+        // print!("sstatus: {:b}\n", sstatus);
+        // write_csr!(sstatus, sstatus | 0b10);
+        // let sstatus = read_csr!(sstatus);
+        // print!("sstatus: {:b}\n", sstatus);
     }
 }
 
@@ -268,6 +268,9 @@ extern "C" fn kerneltrap() {
                     time + 1000000
                 );
                 write_csr!(stimecmp, time + 1000000);
+                if !CPU.current.is_null() {
+                    (*CPU.current).yeld();
+                }
             }
             _ => panic!(),
         }

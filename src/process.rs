@@ -1,11 +1,14 @@
 pub mod trapframe;
 
+use alloc::format;
 use core::arch::naked_asm;
 
 use alloc::boxed::Box;
 
 use crate::{
+    CPU,
     kernel::Kernel,
+    print,
     process::trapframe::Trapframe,
     trap::{interrupt_off, interrupt_on, userret},
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, USER_START, Uvm},
@@ -49,17 +52,38 @@ pub struct Context {
     s11: u32,
 }
 
+impl Context {
+    pub const fn zero() -> Context {
+        Context {
+            ra: 0,
+            sp: 0,
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+            s4: 0,
+            s5: 0,
+            s6: 0,
+            s7: 0,
+            s8: 0,
+            s9: 0,
+            s10: 0,
+            s11: 0,
+        }
+    }
+}
+
 // Holds current execution state
 #[derive(Default)]
 pub struct Cpu {
-    // pub proc: &'a mut Process,
+    pub current: *mut Process,
     pub context: Context,
 }
 
 // processes are initialized on boot (state: UNUSED and kstack)
 // When new process is created pid, state and pagetable are assigned.
 //
-#[derive(Copy, Clone, Default)]
+#[derive(Default)]
 pub struct Process {
     pub pid: Option<u32>,
     pub state: ProcState,
@@ -79,6 +103,19 @@ impl Process {
     }
 
     // fn free(&mut self) {}
+
+    // NOTE: because yield is a keyword
+    pub fn yeld(&mut self) {
+        self.state = ProcState::RUNNABLE;
+        unsafe { self.sched() };
+    }
+
+    unsafe fn sched(&mut self) {
+        unsafe {
+            let cpu = core::ptr::addr_of_mut!(CPU);
+            switch(&mut self.context, &mut (*cpu).context);
+        }
+    }
 
     pub fn kexec(&mut self, img: &[u8]) -> Result<(), ()> {
         let mut pagetree = Uvm::new()?;
@@ -149,17 +186,21 @@ unsafe extern "C" fn switch(c1: &mut Context, c2: &mut Context) {
 
 pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
     loop {
+        print!("scheduler\n");
         unsafe {
             interrupt_on();
-            interrupt_off();
+            // interrupt_off();
         }
 
         for proc in kernel.process_table.iter_mut() {
             if proc.state == ProcState::RUNNABLE {
                 proc.state = ProcState::RUNNING;
-                // TODO: set curr cpu process as proc
-                // kernel.cpus.proc =  proc;
-                unsafe { switch(&mut kernel.cpus.context, &mut proc.context) };
+
+                unsafe {
+                    CPU.current = proc as *mut Process;
+                    let cpu = core::ptr::addr_of_mut!(CPU);
+                    switch(&mut (*cpu).context, &mut proc.context);
+                }
             }
         }
     }
