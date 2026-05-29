@@ -98,7 +98,7 @@ pub extern "C" fn kernelvec() {
         lw t3, 108(sp)
         lw t4, 112(sp)
         lw t5, 116(sp)
-        lw t6, 240(sp)
+        lw t6, 120(sp)
 
         addi sp, sp, 128
 
@@ -254,7 +254,7 @@ extern "C" fn kerneltrap() {
         let scause = read_csr!(scause);
 
         print!(
-            "TRAP sepc=0x{:08x} sstatus=0x{:08x} scause=0x{:x}\n",
+            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
             sepc, sstatus, scause
         );
 
@@ -263,7 +263,7 @@ extern "C" fn kerneltrap() {
             0x80000005 => {
                 let time = read_csr!(time);
                 print!(
-                    "time: 0x{:x}, next timer on: 0x{:x}\n",
+                    ">time: 0x{:x}, next timer on: 0x{:x}\n",
                     time,
                     time + 1000000
                 );

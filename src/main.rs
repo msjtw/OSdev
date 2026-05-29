@@ -70,7 +70,14 @@ fn uart_print(message: &str) {
 
 fn proc0() {
     let mut count = 0;
+    unsafe {
+        interrupt_on();
+    }
     loop {
+        unsafe {
+            let sstatus = read_csr!(sstatus);
+            print!("{:b}\n", sstatus);
+        }
         for _ in 0..100_000 {
             unsafe { asm!("nop") };
         }
@@ -85,7 +92,14 @@ fn proc0() {
 
 fn proc1() {
     let mut count = 1;
+    unsafe {
+        interrupt_on();
+    }
     loop {
+        unsafe {
+            let sstatus = read_csr!(sstatus);
+            print!("{:b}\n", sstatus);
+        }
         for _ in 0..100_000 {
             unsafe { asm!("nop") };
         }

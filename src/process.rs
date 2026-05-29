@@ -1,7 +1,7 @@
 pub mod trapframe;
 
 use alloc::format;
-use core::arch::naked_asm;
+use core::{arch::naked_asm, ptr};
 
 use alloc::boxed::Box;
 
@@ -189,17 +189,17 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
         print!("scheduler\n");
         unsafe {
             interrupt_on();
-            // interrupt_off();
+            interrupt_off();
         }
 
         for proc in kernel.process_table.iter_mut() {
             if proc.state == ProcState::RUNNABLE {
                 proc.state = ProcState::RUNNING;
-
                 unsafe {
                     CPU.current = proc as *mut Process;
                     let cpu = core::ptr::addr_of_mut!(CPU);
                     switch(&mut (*cpu).context, &mut proc.context);
+                    CPU.current = ptr::null_mut();
                 }
             }
         }
