@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::{
     HEAP_ALLOCATOR, KSTACK,
-    process::{Cpu, ProcState, Process, forkret, trapframe::Trapframe},
+    process::{Context, Cpu, ProcState, Process, forkret, trapframe::Trapframe},
     virtmemory::{self, PAGE_LAYOUT, Uvm},
 };
 
@@ -37,8 +37,15 @@ impl Kernel {
                 self.pid += 1;
                 p.state = ProcState::RUNNABLE;
                 p.trapframe = Trapframe::default();
-                p.pagetable = Some(Uvm::new().unwrap());
 
+                // get empty user page table
+                let mut pagetable = Uvm::new().unwrap();
+                // map trampolnie and trapframe
+                pagetable.init_proc(p).unwrap();
+
+                p.pagetable = Some(pagetable);
+
+                p.context = Context::default();
                 // p.context.ra = forkret as *const u32 as u32;
                 p.context.ra = func as *const u32 as u32;
                 p.context.sp = p.kstack;

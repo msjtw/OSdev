@@ -4,7 +4,7 @@ use core::{
     intrinsics::copy_nonoverlapping,
 };
 
-use crate::{HEAP_ALLOCATOR, write_csr};
+use crate::{HEAP_ALLOCATOR, process::Process, trap::trampoline::_trampoline, write_csr};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -22,6 +22,8 @@ pub const USER_START: u32 = 0x80000000;
 pub const UART: u32 = 0x10000000;
 
 pub const VIRT_END: u32 = u32::MAX;
+pub const TRAMPOLINE: u32 = VIRT_END - PAGESIZE;
+pub const TRAPFRAME: u32 = TRAMPOLINE - PAGESIZE;
 
 pub const PAGE_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(PAGESIZE as usize, PAGESIZE as usize) };
@@ -317,6 +319,27 @@ impl Uvm {
 
         let newend = USER_START + size;
         unmap(self.pagetree, newend, self.size - size, true);
+        Ok(())
+    }
+
+    pub fn init_proc(&mut self, proc: &mut Process) -> Result<(), ()> {
+        let trampoline = unsafe { &_trampoline as *const u32 as u32 };
+        map(
+            self.pagetree,
+            TRAMPOLINE,
+            trampoline,
+            PAGESIZE,
+            PTE_R | PTE_X,
+        )?;
+
+        map(
+            self.pagetree,
+            TRAPFRAME,
+            &raw mut proc.trapframe as u32,
+            PAGESIZE,
+            PTE_R | PTE_W,
+        )?;
+
         Ok(())
     }
 

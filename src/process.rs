@@ -10,7 +10,7 @@ use crate::{
     kernel::Kernel,
     print,
     process::trapframe::Trapframe,
-    trap::{interrupt_off, interrupt_on, userret},
+    trap::{interrupt_off, interrupt_on, trampoline::userret},
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, USER_START, Uvm},
 };
 
@@ -206,11 +206,21 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
     }
 }
 
-pub fn forkret(proc: &Process) {
-    // TODO: exec first proc (init) here (or not)
-    prepare_return();
-    let satp = proc.pagetable.unwrap().get_satp().into();
-    userret(satp);
+pub fn forkret() {
+//     // TODO: exec first proc (init) here (or not)
+//     let mut proc;
+//     unsafe{
+//         proc = *CPU.current;
+//     }
+//
+//     prepare_return(&mut proc);
+//     let satp = proc.pagetable.unwrap().get_satp().into();
+//     userret(satp);
 }
-
-fn prepare_return() {}
+//
+// // prepares for retur to userspace
+// fn prepare_return(proc: &mut Process) {
+//     unsafe {
+//         interrupt_off();
+//     }
+// }

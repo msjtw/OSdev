@@ -18,8 +18,9 @@ use core::ptr::write_volatile;
 
 use crate::kernel::Kernel;
 use crate::process::{Context, Cpu, Process};
+use crate::trap::trampoline::{_trampoline, userret, uservec};
 use crate::trap::{init_trap, interrupt_off, interrupt_on};
-use crate::virtmemory::RAMEND;
+use crate::virtmemory::{RAMEND, etext};
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
@@ -127,6 +128,10 @@ pub extern "C" fn main() -> ! {
 
     print!("Hello world\n");
 
+    let tr = unsafe { &_trampoline as *const u32 as u32 };
+    let et = unsafe { &etext as *const u32 as u32 };
+    print!("0x{:x} 0x{:x}: 0x{:x}\n", tr, et, et - tr);
+
     let mut kernel = Box::new(Kernel::default());
 
     kernel.initproc(8).unwrap();
@@ -139,8 +144,18 @@ pub extern "C" fn main() -> ! {
     let user_p0 = kernel.allocproc(proc0).unwrap();
     let user_p1 = kernel.allocproc(proc1).unwrap();
     // user_p.kexec(bytes).unwrap();
+    //
+    let _ = uservec as usize;
+    let _ = userret as usize;
 
-    process::scheduler(kernel);
+    print!("processes\n");
+    // process::scheduler(kernel);
+
+    loop {
+        unsafe {
+            asm!("wfi");
+        };
+    }
 
     // loop {
     //     for _ in 0..10_000 {
