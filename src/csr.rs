@@ -20,6 +20,12 @@ macro_rules! write_csr {
     }};
 }
 
+pub const SSTATUS_SPP: u32 = 1 << 8; // Previous mode, 1=Supervisor, 0=User
+pub const SSTATUS_SPIE: u32 = 1 << 5; // Supervisor Previous Interrupt Enable
+pub const SSTATUS_UPIE: u32 = 1 << 4; // User Previous Interrupt Enable
+pub const SSTATUS_SIE: u32 = 1 << 1; // Supervisor Interrupt Enable
+pub const SSTATUS_UIE: u32 = 1 << 0; // User Interrupt Enable
+
 #[derive(Debug)]
 #[allow(non_camel_case_types, dead_code)]
 pub enum Csr {

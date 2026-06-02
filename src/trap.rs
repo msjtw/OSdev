@@ -142,3 +142,29 @@ extern "C" fn kerneltrap() {
         write_csr!(sstatus, sstatus);
     }
 }
+
+pub extern "C" fn usertrap() -> u32 {
+    unsafe {
+        let sepc = read_csr!(sepc);
+        let sstatus = read_csr!(sstatus);
+        let scause = read_csr!(scause);
+
+        // switch to kernel trap
+        let kernelvec = kernelvec as *const () as u32;
+        write_csr!(stvec, kernelvec);
+
+        let proc = &mut (*CPU.current);
+
+        proc.trapframe.epc = read_csr!(sepc) as u32;
+
+        match scause {
+            8 => {
+                // syscall
+                proc.trapframe.epc += 4;
+                pr
+            }
+            _ => {}
+        }
+    }
+    0
+}

@@ -1,11 +1,11 @@
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Trapframe {
-    kernel_satp: u32,
-    kernel_sp: u32,
-    trap_handler: u32,
+    pub kernel_satp: u32,
+    pub kernel_sp: u32,
+    pub trap_handler: u32,
     pub epc: u32,
-    hartid: u32,
+    pub hartid: u32,
     ra: u32,
     pub sp: u32,
     gp: u32,

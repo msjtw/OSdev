@@ -7,11 +7,14 @@ use alloc::boxed::Box;
 
 use crate::{
     CPU,
+    csr::SSTATUS_SPP,
     kernel::Kernel,
     print,
     process::trapframe::Trapframe,
-    trap::{interrupt_off, interrupt_on, trampoline::userret},
+    read_csr,
+    trap::{interrupt_off, interrupt_on, trampoline::userret, usertrap},
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, USER_START, Uvm},
+    write_csr,
 };
 
 #[macro_export]
@@ -206,21 +209,37 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
     }
 }
 
+// allocproc sets this as ra for new processes
 pub fn forkret() {
-//     // TODO: exec first proc (init) here (or not)
-//     let mut proc;
-//     unsafe{
-//         proc = *CPU.current;
-//     }
-//
-//     prepare_return(&mut proc);
-//     let satp = proc.pagetable.unwrap().get_satp().into();
-//     userret(satp);
+    // TODO: exec first proc (init) here (or not)
+    let mut proc;
+    unsafe {
+        proc = &mut *CPU.current;
+    }
+
+    prepare_return(&mut proc);
+    let satp = proc.pagetable.unwrap().get_satp().into();
+    userret(satp);
 }
-//
-// // prepares for retur to userspace
-// fn prepare_return(proc: &mut Process) {
-//     unsafe {
-//         interrupt_off();
-//     }
-// }
+
+// prepares for retur to userspace
+fn prepare_return(proc: &mut Process) {
+    unsafe {
+        interrupt_off();
+    }
+
+    // TODO: set stvec to uservec (but address mapped in high virt addr)
+
+    proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
+    proc.trapframe.kernel_sp = proc.kstack;
+    proc.trapframe.trap_handler = usertrap as *const () as u32;
+    proc.trapframe.hartid = 0;
+
+    // Prepare csr
+    let mut sstatus = unsafe { read_csr!(sstatus) as u32 };
+    sstatus &= !SSTATUS_SPP;
+    sstatus |= SSTATUS_SPP;
+    unsafe { write_csr!(sstatus, sstatus) };
+
+    unsafe { write_csr!(sepc, proc.trapframe.epc) };
+}
