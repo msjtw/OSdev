@@ -139,14 +139,15 @@ pub extern "C" fn main() -> ! {
     kernel.kvm.start_kvm();
 
     print!("Virt started\n");
-    // let bytes = include_bytes!("../../user_proc/shell.bin");
+    let bytes = include_bytes!("../../shell/main.bin.o");
 
     let user_p0 = kernel.allocproc(proc0).unwrap();
+    user_p0.kexec(bytes).unwrap();
     let user_p1 = kernel.allocproc(proc1).unwrap();
-    // user_p.kexec(bytes).unwrap();
-    //
-    let _ = uservec as usize;
-    let _ = userret as usize;
+    user_p1.kexec(bytes).unwrap();
+    // FIX: 
+    let _ = uservec;
+    let _ = userret;
 
     print!("processes\n");
     // process::scheduler(kernel);

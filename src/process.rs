@@ -223,7 +223,7 @@ pub fn forkret() {
 }
 
 // prepares for retur to userspace
-fn prepare_return(proc: &mut Process) {
+pub fn prepare_return(proc: &mut Process) {
     unsafe {
         interrupt_off();
     }

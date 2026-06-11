@@ -18,7 +18,7 @@ const RAMSTART: u32 = 0x80200000;
 pub const RAMEND: u32 = RAMSTART + RAMSIZE;
 
 const KERNEL_START: u32 = 0x80200000;
-pub const USER_START: u32 = 0x80000000;
+pub const USER_START: u32 = 0x10000;
 pub const UART: u32 = 0x10000000;
 
 pub const VIRT_END: u32 = u32::MAX;

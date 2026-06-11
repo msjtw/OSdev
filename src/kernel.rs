@@ -1,3 +1,5 @@
+pub mod syscall;
+
 use core::alloc::GlobalAlloc;
 
 use alloc::vec::Vec;

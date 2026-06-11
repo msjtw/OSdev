@@ -4,7 +4,7 @@ use core::arch::naked_asm;
 
 use alloc::format;
 
-use crate::{CPU, print, read_csr, write_csr};
+use crate::{CPU, kernel::syscall::syscall, print, process::prepare_return, read_csr, write_csr};
 
 const SIE_SEIE: usize = 1 << 9;
 const SIE_STIE: usize = 1 << 5;
@@ -144,16 +144,17 @@ extern "C" fn kerneltrap() {
 }
 
 pub extern "C" fn usertrap() -> u32 {
+    let proc;
     unsafe {
         let sepc = read_csr!(sepc);
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
+        proc = &mut (*CPU.current);
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
         write_csr!(stvec, kernelvec);
 
-        let proc = &mut (*CPU.current);
 
         proc.trapframe.epc = read_csr!(sepc) as u32;
 
@@ -161,10 +162,25 @@ pub extern "C" fn usertrap() -> u32 {
             8 => {
                 // syscall
                 proc.trapframe.epc += 4;
-                pr
+                syscall();
             }
-            _ => {}
+            0x80000005 => {
+                let time = read_csr!(time);
+                print!(
+                    ">time: 0x{:x}, next timer on: 0x{:x}\n",
+                    time,
+                    time + 1000000
+                );
+                write_csr!(stimecmp, time + 1000000);
+                if !CPU.current.is_null() {
+                    // NOTE: I dont think it's possible for it ot be null
+                    (*CPU.current).yeld();
+                }
+            }
+            _ => panic!(),
         }
+        prepare_return(proc);
     }
-    0
+    let satp = proc.pagetable.unwrap().get_satp();
+    return satp.into();
 }
