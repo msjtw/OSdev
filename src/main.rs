@@ -19,7 +19,7 @@ use core::ptr::write_volatile;
 use crate::kernel::Kernel;
 use crate::process::{Context, Cpu, Process};
 use crate::trap::trampoline::{_trampoline, userret, uservec};
-use crate::trap::{init_trap, interrupt_off, interrupt_on};
+use crate::trap::{init_trap, interrupt_off, interrupt_on, usertrap};
 use crate::virtmemory::{RAMEND, etext};
 
 #[global_allocator]
@@ -128,41 +128,27 @@ pub extern "C" fn main() -> ! {
 
     print!("Hello world\n");
 
-    let tr = unsafe { &_trampoline as *const u32 as u32 };
-    let et = unsafe { &etext as *const u32 as u32 };
-    print!("0x{:x} 0x{:x}: 0x{:x}\n", tr, et, et - tr);
-
     let mut kernel = Box::new(Kernel::default());
 
     kernel.initproc(8).unwrap();
     init_trap();
     kernel.kvm.start_kvm();
-
     print!("Virt started\n");
-    let bytes = include_bytes!("../../shell/main.bin.o");
 
+    // let bytes = include_bytes!("../../shell/main.bin.o");
     let user_p0 = kernel.allocproc(proc0).unwrap();
-    user_p0.kexec(bytes).unwrap();
+    // user_p0.kexec(bytes).unwrap();
     let user_p1 = kernel.allocproc(proc1).unwrap();
-    user_p1.kexec(bytes).unwrap();
-    // FIX: 
-    let _ = uservec;
-    let _ = userret;
+    // user_p1.kexec(bytes).unwrap();
+
+    let _ = uservec as usize;
+    let _ = usertrap as usize;
 
     print!("processes\n");
-    // process::scheduler(kernel);
-
-    loop {
-        unsafe {
-            asm!("wfi");
-        };
-    }
+    process::scheduler(kernel);
 
     // loop {
-    //     for _ in 0..10_000 {
-    //         unsafe { asm!("nop") };
-    //     }
-    //     print!("MAIN\n");
+    //     unsafe { asm!("wfi") };
     // }
 }
 

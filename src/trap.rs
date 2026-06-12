@@ -151,10 +151,14 @@ pub extern "C" fn usertrap() -> u32 {
         let scause = read_csr!(scause);
         proc = &mut (*CPU.current);
 
+        print!(
+            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
+            sepc, sstatus, scause
+        );
+
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
         write_csr!(stvec, kernelvec);
-
 
         proc.trapframe.epc = read_csr!(sepc) as u32;
 

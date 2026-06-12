@@ -203,6 +203,8 @@ impl Kvm {
     // ...
 
     pub fn init() -> Result<Kvm, ()> {
+        let trampoline = unsafe { &_trampoline as *const u32 as u32 };
+
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
         let kvm = Kvm {
             pagetree: root_page,
@@ -229,6 +231,15 @@ impl Kvm {
             end_text,
             RAMEND - end_text,
             PTE_R | PTE_W,
+        )?;
+
+        // map trampoline
+        map(
+            kvm.pagetree,
+            TRAMPOLINE,
+            trampoline,
+            PAGESIZE,
+            PTE_R | PTE_X,
         )?;
 
         Ok(kvm)

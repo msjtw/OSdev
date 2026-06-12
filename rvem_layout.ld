@@ -22,7 +22,8 @@ SECTIONS {
     _trampoline = .;
     KEEP(*(.trampsec))
     . = ALIGN(0x1000);
-    ASSERT(. - _trampoline != 0x1000, "trampoline too large");
+    ASSERT(. - _trampoline >= 0x0, "trampoline empty");
+    ASSERT(. - _trampoline == 0x1000, "trampoline too large");
   }
   PROVIDE(etext = .);
 
