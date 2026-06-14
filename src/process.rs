@@ -20,7 +20,7 @@ use crate::{
 #[macro_export]
 macro_rules! KSTACK {
     ($n:expr) => {
-        virtmemory::VIRT_END - 1 - ($n + 1) * virtmemory::PAGESIZE * 2
+        virtmemory::TRAMPOLINE - (($n + 1) * virtmemory::PAGESIZE * 2)
     };
 }
 

@@ -4,7 +4,9 @@ use core::{
     intrinsics::copy_nonoverlapping,
 };
 
-use crate::{HEAP_ALLOCATOR, process::Process, trap::trampoline::_trampoline, write_csr};
+use alloc::format;
+
+use crate::{HEAP_ALLOCATOR, print, process::Process, trap::trampoline::_trampoline, write_csr};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -21,7 +23,10 @@ const KERNEL_START: u32 = 0x80200000;
 pub const USER_START: u32 = 0x10000;
 pub const UART: u32 = 0x10000000;
 
-pub const VIRT_END: u32 = u32::MAX;
+// NOTE: I need address one above last virutal, but it wont fit in u32 (it is 33 bit).
+// So the last page is discarded and VIRT_END is set to first address of last page.
+// 0xffffff is last address of last page, -PAGESIZE is last of one to last page, +1 is first of last
+pub const VIRT_END: u32 = 0xffffffff - PAGESIZE + 1;
 pub const TRAMPOLINE: u32 = VIRT_END - PAGESIZE;
 pub const TRAPFRAME: u32 = TRAMPOLINE - PAGESIZE;
 
@@ -246,8 +251,9 @@ impl Kvm {
     }
 
     // maps and allocates kernel stacks
-    pub fn map_kstack(&mut self, pa: u32, va: u32) {
-        map(self.pagetree, va, pa, PAGESIZE, PTE_R | PTE_W);
+    pub fn alloc_kstack(&mut self, va: u32) {
+        let kstack_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as u32 };
+        map(self.pagetree, va, kstack_page, PAGESIZE, PTE_R | PTE_W);
     }
 
     pub fn start_kvm(&self) {
@@ -383,6 +389,15 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
     // TODO: tests
     // - size and virt addr aligned on page
     // - size > 0 and end < RAMEND
+
+    if virt % PAGESIZE != 0 {
+        print!("mapping unalinged page\n");
+        panic!();
+    }
+    if size % PAGESIZE != 0 {
+        print!("mapping not whole pages\n");
+        panic!();
+    }
 
     let mut vaddr = virt;
     let mut paddr = phys;

@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use crate::{
     HEAP_ALLOCATOR, KSTACK,
     process::{Context, Cpu, ProcState, Process, forkret, trapframe::Trapframe},
-    virtmemory::{self, PAGE_LAYOUT, Uvm},
+    virtmemory::{self, PAGE_LAYOUT, PAGESIZE, Uvm},
 };
 
 #[derive(Default)]
@@ -23,9 +23,8 @@ impl Kernel {
     pub fn initproc(&mut self, n: u32) -> Result<(), ()> {
         let nproc = self.process_table.len() as u32;
         for i in nproc..nproc + n {
-            let kstack_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as u32 };
             let proc = Process::new(i)?;
-            self.kvm.map_kstack(kstack_page, KSTACK!(i));
+            self.kvm.alloc_kstack(KSTACK!(i));
 
             self.process_table.push(proc);
         }
@@ -50,7 +49,7 @@ impl Kernel {
                 p.context = Context::default();
                 // p.context.ra = forkret as *const u32 as u32;
                 p.context.ra = func as *const u32 as u32;
-                p.context.sp = p.kstack;
+                p.context.sp = p.kstack + PAGESIZE -1;
 
                 return Some(p);
             }

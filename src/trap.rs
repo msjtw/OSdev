@@ -115,10 +115,11 @@ extern "C" fn kerneltrap() {
         let sepc = read_csr!(sepc);
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
+        let stval = 0;
 
         print!(
-            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
-            sepc, sstatus, scause
+            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} \n",
+            sepc, sstatus, scause, 
         );
 
         // Because trap originated in kernel it coudl
@@ -152,7 +153,7 @@ pub extern "C" fn usertrap() -> u32 {
         proc = &mut (*CPU.current);
 
         print!(
-            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
+            "user>TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
             sepc, sstatus, scause
         );
 
@@ -171,7 +172,7 @@ pub extern "C" fn usertrap() -> u32 {
             0x80000005 => {
                 let time = read_csr!(time);
                 print!(
-                    ">time: 0x{:x}, next timer on: 0x{:x}\n",
+                    "user>time: 0x{:x}, next timer on: 0x{:x}\n",
                     time,
                     time + 1000000
                 );

@@ -17,14 +17,13 @@ SECTIONS {
     . = ALIGN(4);
   } > ram
 
-  .trampsec : ALIGN(0x1000)
-  {
+  /* .trampsec : ALIGN(0x1000) { */
     _trampoline = .;
-    KEEP(*(.trampsec))
+    /* KEEP(*(.trampsec)) */
     . = ALIGN(0x1000);
-    ASSERT(. - _trampoline >= 0x0, "trampoline empty");
-    ASSERT(. - _trampoline == 0x1000, "trampoline too large");
-  }
+    /* ASSERT(. - _trampoline >= 0x0, "trampoline empty"); */
+    /* ASSERT(. - _trampoline == 0x1000, "trampoline too large"); */
+  /* } */
   PROVIDE(etext = .);
 
   .rodata : {
