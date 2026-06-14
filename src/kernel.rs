@@ -49,7 +49,7 @@ impl Kernel {
                 p.context = Context::default();
                 // p.context.ra = forkret as *const u32 as u32;
                 p.context.ra = func as *const u32 as u32;
-                p.context.sp = p.kstack + PAGESIZE -1;
+                p.context.sp = p.kstack + PAGESIZE;
 
                 return Some(p);
             }

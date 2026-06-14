@@ -7,38 +7,37 @@ MEMORY {
 }
 
 SECTIONS {
-  .text.boot : {
-    *(.text.boot)
-    . = ALIGN(4);
-  } > ram
-
   .text : {
-    *(.text)
-    . = ALIGN(4);
-  } > ram
+    *(.text.boot)
+    *(.text .text.*)
 
-  /* .trampsec : ALIGN(0x1000) { */
-    _trampoline = .;
-    /* KEEP(*(.trampsec)) */
     . = ALIGN(0x1000);
-    /* ASSERT(. - _trampoline >= 0x0, "trampoline empty"); */
-    /* ASSERT(. - _trampoline == 0x1000, "trampoline too large"); */
-  /* } */
-  PROVIDE(etext = .);
+
+    PROVIDE(_trampoline = .);
+
+    KEEP(*(.trampsec))
+
+    . = ALIGN(0x1000);
+
+    ASSERT(. - _trampoline >= 0x0, "trampoline empty");
+    ASSERT(. - _trampoline == 0x1000, "trampoline too large");
+
+    PROVIDE(etext = .);
+  } > ram
 
   .rodata : {
     *(.rodata*)
-    . = ALIGN(4);
+    . = ALIGN(16);
   } > ram
 
   .data : {
     *(.data*)
-    . = ALIGN(4);
+    . = ALIGN(16);
   } > ram
 
   .bss : {
     *(.bss*)
-    . = ALIGN(4);
+    . = ALIGN(16);
   } > ram
 
   . = ALIGN(8);

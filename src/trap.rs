@@ -31,7 +31,7 @@ pub fn init_trap() {
         // print!("sstatus: {:b}\n", sstatus);
         // write_csr!(sstatus, sstatus | 0b10);
         // let sstatus = read_csr!(sstatus);
-        // print!("sstatus: {:b}\n", sstatus);
+        // print!("sstatus: {:b}\n", sstatus);aa
     }
 }
 
@@ -115,14 +115,14 @@ extern "C" fn kerneltrap() {
         let sepc = read_csr!(sepc);
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
-        let stval = 0;
+        let stval = read_csr!(stval);
 
         print!(
-            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} \n",
-            sepc, sstatus, scause, 
+            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
+            sepc, sstatus, scause, stval,
         );
 
-        // Because trap originated in kernel it coudl
+        // Because trap originated in kernel it coudl (what?)
         match scause {
             0x80000005 => {
                 let time = read_csr!(time);

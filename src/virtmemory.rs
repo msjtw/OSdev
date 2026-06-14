@@ -26,7 +26,8 @@ pub const UART: u32 = 0x10000000;
 // NOTE: I need address one above last virutal, but it wont fit in u32 (it is 33 bit).
 // So the last page is discarded and VIRT_END is set to first address of last page.
 // 0xffffff is last address of last page, -PAGESIZE is last of one to last page, +1 is first of last
-pub const VIRT_END: u32 = 0xffffffff - PAGESIZE + 1;
+pub const VIRT_END: u32 = 0xffffffff - PAGESIZE +1;
+// pub const VIRT_END: u32 = u32::MAX;
 pub const TRAMPOLINE: u32 = VIRT_END - PAGESIZE;
 pub const TRAPFRAME: u32 = TRAMPOLINE - PAGESIZE;
 

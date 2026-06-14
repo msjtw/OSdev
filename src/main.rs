@@ -142,7 +142,7 @@ pub extern "C" fn main() -> ! {
     // user_p1.kexec(bytes).unwrap();
 
     let _ = uservec as usize;
-    let _ = usertrap as usize;
+    let _ = userret as usize;
 
     print!("processes\n");
     process::scheduler(kernel);
