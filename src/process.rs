@@ -1,19 +1,24 @@
 pub mod trapframe;
 
 use alloc::format;
-use core::{arch::naked_asm, ptr};
+use core::{arch::naked_asm, mem::transmute, ptr};
 
 use alloc::boxed::Box;
 
 use crate::{
-    CPU,
+    CPU, FRAME_ALLOCATOR,
     csr::SSTATUS_SPP,
+    frame_allocator::FrameAllocator,
     kernel::Kernel,
     print,
     process::trapframe::Trapframe,
     read_csr,
-    trap::{interrupt_off, interrupt_on, trampoline::userret, usertrap},
-    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, USER_START, Uvm},
+    trap::{
+        interrupt_off, interrupt_on,
+        trampoline::{_trampoline, userret},
+        usertrap,
+    },
+    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm},
     write_csr,
 };
 
@@ -86,22 +91,24 @@ pub struct Cpu {
 // processes are initialized on boot (state: UNUSED and kstack)
 // When new process is created pid, state and pagetable are assigned.
 //
-#[derive(Default)]
 pub struct Process {
     pub pid: Option<u32>,
     pub state: ProcState,
     pub kstack: u32,                        // virt addr of kernel stack page
     pub pagetable: Option<virtmemory::Uvm>, // user virt pagetable
     pub context: Context,
-    pub trapframe: Trapframe,
+    pub trapframe: Box<Trapframe, &'static FrameAllocator>,
 }
 
 impl Process {
     pub fn new(n: u32) -> Result<Process, ()> {
         Ok(Process {
+            pid: None,
+            state: ProcState::default(),
             kstack: KSTACK!(n),
-            pagetable: Some(Uvm::new()?),
-            ..Default::default()
+            pagetable: None,
+            context: Context::default(),
+            trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
         })
     }
 
@@ -121,7 +128,7 @@ impl Process {
     }
 
     pub fn kexec(&mut self, img: &[u8]) -> Result<(), ()> {
-        let mut pagetree = Uvm::new()?;
+        let mut pagetree = Uvm::new(&self)?;
         pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X)?;
         pagetree.load(USER_START, img)?;
 
@@ -142,7 +149,8 @@ impl Process {
         // switch to new pagetree
         self.pagetable = Some(pagetree);
         self.trapframe.sp = sp;
-        self.trapframe.epc = USER_START;
+        self.trapframe.epc = 0x10318;
+        // self.trapframe.epc = USER_START;
 
         Ok(())
     }
@@ -219,10 +227,16 @@ pub fn forkret() {
 
     prepare_return(&mut proc);
     let satp = proc.pagetable.unwrap().get_satp().into();
-    userret(satp);
+    // NOTE: userret is in 2 places, in kernel text and also mapped into
+    // high address in TRAMPOLINE, we need to call it through TRAMPOLINE address.
+    let userret_addr = userret as *const () as usize;
+    let trampoline = unsafe { &_trampoline as *const u32 as usize };
+    let userret_off = userret_addr - trampoline;
+    let trampoline_userret: fn(u32) = unsafe { transmute(TRAMPOLINE as usize + userret_off) };
+    trampoline_userret(satp);
 }
 
-// prepares for retur to userspace
+// prepares for return to userspace
 pub fn prepare_return(proc: &mut Process) {
     unsafe {
         interrupt_off();

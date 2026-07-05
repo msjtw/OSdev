@@ -2,12 +2,10 @@ pub mod syscall;
 
 use core::alloc::GlobalAlloc;
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, format, vec::Vec};
 
 use crate::{
-    HEAP_ALLOCATOR, KSTACK,
-    process::{Context, Cpu, ProcState, Process, forkret, trapframe::Trapframe},
-    virtmemory::{self, PAGE_LAYOUT, PAGESIZE, Uvm},
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR, KSTACK, print, process::{Context, Cpu, ProcState, Process, forkret, trapframe::Trapframe}, virtmemory::{self, PAGE_LAYOUT, PAGESIZE, Uvm}
 };
 
 #[derive(Default)]
@@ -37,18 +35,16 @@ impl Kernel {
                 p.pid = Some(self.pid);
                 self.pid += 1;
                 p.state = ProcState::RUNNABLE;
-                p.trapframe = Trapframe::default();
+                p.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
 
                 // get empty user page table
-                let mut pagetable = Uvm::new().unwrap();
-                // map trampolnie and trapframe
-                pagetable.init_proc(p).unwrap();
+                let pagetable = Uvm::new(p).unwrap();
 
                 p.pagetable = Some(pagetable);
 
                 p.context = Context::default();
-                // p.context.ra = forkret as *const u32 as u32;
-                p.context.ra = func as *const u32 as u32;
+                p.context.ra = forkret as *const u32 as u32;
+                // p.context.ra = func as *const u32 as u32;
                 p.context.sp = p.kstack + PAGESIZE;
 
                 return Some(p);

@@ -40,10 +40,10 @@ SECTIONS {
     . = ALIGN(16);
   } > ram
 
-  . = ALIGN(8);
-  . = . + 4096;
+  . = ALIGN(0x1000); 
+  . = . + 0x1000;
   PROVIDE(_STACK_PTR = .);
-  . = . + 32;
+  /* . = . + 32; */
   . = ALIGN(0x1000); 
   PROVIDE(ekernel = .);
 }

@@ -1,5 +1,5 @@
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
+#[derive(Default)]
 pub struct Trapframe {
     pub kernel_satp: u32,
     pub kernel_sp: u32,
@@ -38,3 +38,9 @@ pub struct Trapframe {
     t5: u32,
     t6: u32,
 }
+
+// impl Trapframe {
+//     pub fn new() -> Self {
+//         
+//     }
+// }

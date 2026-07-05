@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
+#![feature(allocator_api)]
 
 mod csr;
+pub mod frame_allocator;
 mod kernel;
 mod process;
 mod trap;
@@ -17,13 +19,17 @@ use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
 use crate::kernel::Kernel;
-use crate::process::{Context, Cpu, Process};
-use crate::trap::trampoline::{_trampoline, userret, uservec};
+use crate::process::{Context, Cpu};
+use crate::trap::trampoline::{userret, uservec};
 use crate::trap::{init_trap, interrupt_off, interrupt_on, usertrap};
-use crate::virtmemory::{RAMEND, etext};
+use crate::virtmemory::RAMEND;
+
+const USER_BYTES: &[u8; 531684] = include_bytes!("../../shell/main.bin.o");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
+
+static FRAME_ALLOCATOR: frame_allocator::FrameAllocator = frame_allocator::FrameAllocator {};
 
 // #[unsafe(no_mangle)]
 // unsafe extern  static STACK: [u8; 4096] = [0; 4096];
@@ -115,6 +121,10 @@ fn proc1() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> ! {
+    // NOTE: without this they are optimized away
+    let _ = uservec as *const () as usize;
+    let _ = userret as *const () as usize;
+
     // TODO: How to implement memory so all acceses dont have to be unsafe.
     //       Can I map a slice [u8] over whole avaliable ram?
 
@@ -128,21 +138,19 @@ pub extern "C" fn main() -> ! {
 
     print!("Hello world\n");
 
+    init_trap();
     let mut kernel = Box::new(Kernel::default());
 
     kernel.initproc(8).unwrap();
-    init_trap();
     kernel.kvm.start_kvm();
     print!("Virt started\n");
 
-    // let bytes = include_bytes!("../../shell/main.bin.o");
     let user_p0 = kernel.allocproc(proc0).unwrap();
-    // user_p0.kexec(bytes).unwrap();
+    user_p0.kexec(USER_BYTES).unwrap();
     let user_p1 = kernel.allocproc(proc1).unwrap();
-    // user_p1.kexec(bytes).unwrap();
+    user_p1.kexec(USER_BYTES).unwrap();
 
-    let _ = uservec as usize;
-    let _ = userret as usize;
+
 
     print!("processes\n");
     process::scheduler(kernel);

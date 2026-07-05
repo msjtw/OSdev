@@ -4,9 +4,9 @@ use core::{
     intrinsics::copy_nonoverlapping,
 };
 
-use alloc::format;
+use alloc::{alloc::Allocator, format};
 
-use crate::{HEAP_ALLOCATOR, print, process::Process, trap::trampoline::_trampoline, write_csr};
+use crate::{FRAME_ALLOCATOR, HEAP_ALLOCATOR, print, process::{Process, trapframe::Trapframe}, trap::trampoline::_trampoline, write_csr};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -26,7 +26,7 @@ pub const UART: u32 = 0x10000000;
 // NOTE: I need address one above last virutal, but it wont fit in u32 (it is 33 bit).
 // So the last page is discarded and VIRT_END is set to first address of last page.
 // 0xffffff is last address of last page, -PAGESIZE is last of one to last page, +1 is first of last
-pub const VIRT_END: u32 = 0xffffffff - PAGESIZE +1;
+pub const VIRT_END: u32 = 0xffffffff - PAGESIZE + 1;
 // pub const VIRT_END: u32 = u32::MAX;
 pub const TRAMPOLINE: u32 = VIRT_END - PAGESIZE;
 pub const TRAPFRAME: u32 = TRAMPOLINE - PAGESIZE;
@@ -60,7 +60,7 @@ struct PTE {
 impl From<u32> for PTE {
     fn from(pte: u32) -> Self {
         PTE {
-            pa: (pte & 0b11111111111111111111110000000000),
+            pa: (pte & 0b11111111111111111111110000000000) << 2,
             ppn: (pte & 0b11111111111111111111110000000000) >> 10,
             ppn1: (pte & 0b11111111111100000000000000000000) >> 20,
             ppn0: (pte & 0b00000000000011111111110000000000) >> 10,
@@ -96,7 +96,7 @@ impl Into<u32> for PTE {
 impl PTE {
     #[inline]
     // get pte from physical address without permissions
-    fn from_pa(pa: u32) -> PTE {
+    fn from_addr(pa: u32) -> PTE {
         let mask = (1 << 12) - 1;
         let pte = (pa & !mask) >> 2;
         PTE::from(pte)
@@ -240,6 +240,7 @@ impl Kvm {
         )?;
 
         // map trampoline
+        print!("TRAMPOLINE: 0x{:08x}\n", TRAMPOLINE);
         map(
             kvm.pagetree,
             TRAMPOLINE,
@@ -253,8 +254,8 @@ impl Kvm {
 
     // maps and allocates kernel stacks
     pub fn alloc_kstack(&mut self, va: u32) {
-        let kstack_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as u32 };
-        map(self.pagetree, va, kstack_page, PAGESIZE, PTE_R | PTE_W);
+        let kstack_page = FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as u32;
+        map(self.pagetree, va, kstack_page, PAGESIZE, PTE_R | PTE_W).unwrap();
     }
 
     pub fn start_kvm(&self) {
@@ -294,13 +295,15 @@ impl Uvm {
         }
     }
 
-    pub fn new() -> Result<Uvm, ()> {
+    pub fn new(proc: &Process) -> Result<Uvm, ()> {
         let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        Ok(Uvm {
+        let mut uvm = Uvm {
             begin: USER_START,
             size: 0,
             pagetree: root_page,
-        })
+        };
+        uvm.init_proc(proc);
+        Ok(uvm)
     }
 
     pub fn free() {
@@ -340,7 +343,7 @@ impl Uvm {
         Ok(())
     }
 
-    pub fn init_proc(&mut self, proc: &mut Process) -> Result<(), ()> {
+    fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
         let trampoline = unsafe { &_trampoline as *const u32 as u32 };
         map(
             self.pagetree,
@@ -353,7 +356,7 @@ impl Uvm {
         map(
             self.pagetree,
             TRAPFRAME,
-            &raw mut proc.trapframe as u32,
+            proc.trapframe.as_ref() as *const Trapframe as u32,
             PAGESIZE,
             PTE_R | PTE_W,
         )?;
@@ -372,12 +375,16 @@ impl Uvm {
             let pte = unsafe { walk(self.pagetree, va, false).ok_or(())?.read() };
             let pte = PTE::from(pte);
             // NOTE: This write will go through kernel pagetree,
-            // so the write address is va in kernel virt memory,
+            // so the dst address is va in kernel virt memory,
             // but in kernel pa is identity mapped so pa = va.
             unsafe {
-                let dst_ptr = pte.pa as *mut u8;
-                let src_ptr = page.as_ptr();
-                copy_nonoverlapping(src_ptr, dst_ptr, PAGESIZE as usize);
+                let src_addr = page.as_ptr() as *const u8;
+                let dst_addr = pte.pa as *mut u8;
+                print!(
+                    "src=0x{:x?} dst=0x{:x?} (va=0x{:x})\n",
+                    src_addr, dst_addr, va
+                );
+                copy_nonoverlapping(src_addr, dst_addr, 1);
             };
             va += PAGESIZE;
         }
@@ -391,8 +398,12 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
     // - size and virt addr aligned on page
     // - size > 0 and end < RAMEND
 
+    if phys % PAGESIZE != 0 {
+        print!("mapping to unalinged frame 0x{:08x}\n", phys);
+        panic!();
+    }
     if virt % PAGESIZE != 0 {
-        print!("mapping unalinged page\n");
+        print!("mapping unalinged page 0x{:08x}\n", virt);
         panic!();
     }
     if size % PAGESIZE != 0 {
@@ -407,10 +418,11 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
         let pte_addr = walk(pagetree, vaddr, true).ok_or(())?;
         // NOTE: check for remap (I don't think it's possible)
 
-        let mut pte = PTE::from_pa(paddr as u32);
+        let mut pte = PTE::from_addr(paddr as u32);
         pte.v = true;
         let mut pte: u32 = pte.into(); // set permissions
         pte |= perm;
+        // print!("-> 0x{:x} 0x{:x}\n", paddr, PTE::from(pte).pa);
         unsafe { pte_addr.write(pte) };
 
         vaddr += PAGESIZE;
@@ -466,7 +478,7 @@ fn walk(pagetree: *mut u32, virt_a: u32, alloc: bool) -> Option<*mut u32> {
             return None;
         }
         let new_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let mut new_pte = PTE::from_pa(new_page as u32);
+        let mut new_pte = PTE::from_addr(new_page as u32);
         new_pte.v = true;
         unsafe { pte_addr.write(new_pte.into()) };
         a = new_page;
