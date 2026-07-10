@@ -39,7 +39,7 @@ static mut CPU: Cpu = Cpu {
     context: Context::zero(),
 };
 
-global_asm!(
+global_asm!( 
     "
     .global _entry
     .extern _STACK_PTR
@@ -164,4 +164,4 @@ pub extern "C" fn main() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     print!("Something went wrong. {:?}\n", info);
     loop {}
-}
+} 

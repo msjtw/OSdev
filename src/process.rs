@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 
 use crate::{
     CPU, FRAME_ALLOCATOR,
-    csr::SSTATUS_SPP,
+    csr::{SSTATUS_SPIE, SSTATUS_SPP},
     frame_allocator::FrameAllocator,
     kernel::Kernel,
     print,
@@ -15,7 +15,7 @@ use crate::{
     read_csr,
     trap::{
         interrupt_off, interrupt_on,
-        trampoline::{_trampoline, userret},
+        trampoline::{_trampoline, userret, uservec},
         usertrap,
     },
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm},
@@ -242,17 +242,20 @@ pub fn prepare_return(proc: &mut Process) {
         interrupt_off();
     }
 
-    // TODO: set stvec to uservec (but address mapped in high virt addr)
+    let trampoline = unsafe { &_trampoline as *const u32 as u32 };
+    let uservec_addr = uservec as *const () as u32;
+    let uservec_off = uservec_addr - trampoline;
+    unsafe { write_csr!(stvec, TRAMPOLINE + uservec_off) };
 
     proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
-    proc.trapframe.kernel_sp = proc.kstack;
+    proc.trapframe.kernel_sp = proc.kstack + PAGESIZE;
     proc.trapframe.trap_handler = usertrap as *const () as u32;
     proc.trapframe.hartid = 0;
 
-    // Prepare csr
+    // previous mode to user
     let mut sstatus = unsafe { read_csr!(sstatus) as u32 };
     sstatus &= !SSTATUS_SPP;
-    sstatus |= SSTATUS_SPP;
+    sstatus |= SSTATUS_SPIE;
     unsafe { write_csr!(sstatus, sstatus) };
 
     unsafe { write_csr!(sepc, proc.trapframe.epc) };

@@ -178,7 +178,7 @@ pub extern "C" fn usertrap() -> u32 {
                 );
                 write_csr!(stimecmp, time + 1000000);
                 if !CPU.current.is_null() {
-                    // NOTE: I dont think it's possible for it ot be null
+                    // NOTE: I dont think it's possible for it to be null
                     (*CPU.current).yeld();
                 }
             }
