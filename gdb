@@ -5,5 +5,6 @@ dashboard -layout variables stack
 layout asm
 layout split 
 break main
-break process.rs:234
+break trap.rs:161
+break *0x10000
 c

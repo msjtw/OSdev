@@ -149,8 +149,8 @@ impl Process {
         // switch to new pagetree
         self.pagetable = Some(pagetree);
         self.trapframe.sp = sp;
-        self.trapframe.epc = 0x10318;
-        // self.trapframe.epc = USER_START;
+        // self.trapframe.epc = 0x100f;
+        self.trapframe.epc = USER_START;
 
         Ok(())
     }

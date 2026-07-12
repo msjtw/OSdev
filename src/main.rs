@@ -24,7 +24,7 @@ use crate::trap::trampoline::{userret, uservec};
 use crate::trap::{init_trap, interrupt_off, interrupt_on, usertrap};
 use crate::virtmemory::RAMEND;
 
-const USER_BYTES: &[u8; 531684] = include_bytes!("../../shell/main.bin.o");
+const USER_BYTES: &[u8; 3369] = include_bytes!("../../user/_div.bin");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();

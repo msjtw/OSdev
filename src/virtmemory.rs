@@ -6,7 +6,12 @@ use core::{
 
 use alloc::{alloc::Allocator, format};
 
-use crate::{FRAME_ALLOCATOR, HEAP_ALLOCATOR, print, process::{Process, trapframe::Trapframe}, trap::trampoline::_trampoline, write_csr};
+use crate::{
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR, print,
+    process::{Process, trapframe::Trapframe},
+    trap::trampoline::_trampoline,
+    write_csr,
+};
 
 unsafe extern "C" {
     pub static etext: u32;
@@ -372,6 +377,9 @@ impl Uvm {
             return Err(());
         }
         for page in img.chunks(PAGESIZE as usize) {
+            // for w in page.chunks(4) {
+            //     print!("0x{:08x}\n", u32::from_le_bytes(w.try_into().unwrap()));
+            // }
             let pte = unsafe { walk(self.pagetree, va, false).ok_or(())?.read() };
             let pte = PTE::from(pte);
             // NOTE: This write will go through kernel pagetree,
@@ -384,7 +392,7 @@ impl Uvm {
                     "src=0x{:x?} dst=0x{:x?} (va=0x{:x})\n",
                     src_addr, dst_addr, va
                 );
-                copy_nonoverlapping(src_addr, dst_addr, 1);
+                copy_nonoverlapping(src_addr, dst_addr, PAGESIZE as usize);
             };
             va += PAGESIZE;
         }

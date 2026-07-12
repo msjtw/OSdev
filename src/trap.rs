@@ -167,6 +167,7 @@ pub extern "C" fn usertrap() -> u32 {
             8 => {
                 // syscall
                 proc.trapframe.epc += 4;
+                interrupt_on();
                 syscall();
             }
             0x80000005 => {
