@@ -2,6 +2,7 @@ use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
     intrinsics::copy_nonoverlapping,
+    ptr::{null, null_mut},
 };
 
 use alloc::{alloc::Allocator, format};
@@ -199,12 +200,6 @@ pub struct Kvm {
     pagetree: *mut u32,
 }
 
-impl Default for Kvm {
-    fn default() -> Self {
-        Kvm::init().unwrap()
-    }
-}
-
 impl Kvm {
     // NOTE: Top of kernel address space is:
     // trampoline
@@ -319,6 +314,10 @@ impl Uvm {
         self.begin + self.size
     }
 
+    pub fn grow(&mut self, size: u32, perm: u32) -> Result<(), ()> {
+        self.alloc(self.size + size, perm)
+    }
+
     // grow new pages to size
     // it creates virt address space from USERBASE to size
     pub fn alloc(&mut self, size: u32, perm: u32) -> Result<(), ()> {
@@ -418,6 +417,8 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
         print!("mapping not whole pages\n");
         panic!();
     }
+
+    print!("mapping x0{:x} -> 0x{:x}\n", virt, phys);
 
     let mut vaddr = virt;
     let mut paddr = phys;

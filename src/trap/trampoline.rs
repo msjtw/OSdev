@@ -86,8 +86,10 @@ pub extern "C" fn uservec() {
         sfence.vma zero, zero
 
         # call usertrap()
-        jalr t0 ",
+        jalr t0
+        j {userret}",
         trapframe = const TRAPFRAME,
+        userret = sym userret,
     );
 }
 

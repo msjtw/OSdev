@@ -22,10 +22,8 @@ pub fn init_trap() {
         // write_csr!(stimecmp, time + 1_00_000);
 
         let sie = read_csr!(sie);
-        print!("sie: {:b}\n", sie);
         write_csr!(sie, sie | SIE_SEIE | SIE_STIE);
-        let sie = read_csr!(sie);
-        print!("sie: {:b}\n", sie);
+        // let sie = read_csr!(sie);
 
         // let sstatus = read_csr!(sstatus);
         // print!("sstatus: {:b}\n", sstatus);
@@ -47,6 +45,14 @@ pub unsafe fn interrupt_off() {
         let sstatus = read_csr!(sstatus);
         write_csr!(sstatus, sstatus & !SSTATUS_SIE);
     }
+}
+
+pub fn interrupt_read() -> bool {
+    let state = unsafe {
+        let sstatus = read_csr!(sstatus);
+        sstatus & SSTATUS_SIE
+    };
+    state != 0
 }
 
 #[unsafe(naked)]
@@ -117,9 +123,14 @@ extern "C" fn kerneltrap() {
         let scause = read_csr!(scause);
         let stval = read_csr!(stval);
 
+        let mut pid = None;
+        if !(*CPU).current.is_null() {
+            pid = (*(*CPU).current).pid;
+        }
+
         print!(
-            ">TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
-            sepc, sstatus, scause, stval,
+            ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
+            pid, sepc, sstatus, scause, stval,
         );
 
         // Because trap originated in kernel it coudl (what?)
@@ -132,8 +143,8 @@ extern "C" fn kerneltrap() {
                     time + 1000000
                 );
                 write_csr!(stimecmp, time + 1000000);
-                if !CPU.current.is_null() {
-                    (*CPU.current).yeld();
+                if !(*CPU).current.is_null() {
+                    (*(*CPU).current).yeld();
                 }
             }
             _ => panic!(),
@@ -147,27 +158,28 @@ extern "C" fn kerneltrap() {
 pub extern "C" fn usertrap() -> u32 {
     let proc;
     unsafe {
-        let sepc = read_csr!(sepc);
-        let sstatus = read_csr!(sstatus);
+        let sepc = read_csr!(sepc) as u32;
+        let _sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
-        proc = &mut (*CPU.current);
+        proc = &mut (*(*CPU).current);
 
-        print!(
-            "user>TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
-            sepc, sstatus, scause
-        );
+        // print!(
+        //     "user>TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
+        //     sepc, sstatus, scause
+        // );
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
         write_csr!(stvec, kernelvec);
+        // with right trapvec enable interrupts
+        interrupt_on();
 
-        proc.trapframe.epc = read_csr!(sepc) as u32;
+        proc.trapframe.epc = sepc;
 
         match scause {
             8 => {
                 // syscall
                 proc.trapframe.epc += 4;
-                interrupt_on();
                 syscall();
             }
             0x80000005 => {
@@ -178,9 +190,9 @@ pub extern "C" fn usertrap() -> u32 {
                     time + 1000000
                 );
                 write_csr!(stimecmp, time + 1000000);
-                if !CPU.current.is_null() {
+                if !(*CPU).current.is_null() {
                     // NOTE: I dont think it's possible for it to be null
-                    (*CPU.current).yeld();
+                    (*(*CPU).current).yeld();
                 }
             }
             _ => panic!(),

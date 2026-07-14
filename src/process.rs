@@ -6,26 +6,17 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    CPU, FRAME_ALLOCATOR,
-    csr::{SSTATUS_SPIE, SSTATUS_SPP},
-    frame_allocator::FrameAllocator,
-    kernel::Kernel,
-    print,
-    process::trapframe::Trapframe,
-    read_csr,
-    trap::{
+    CPU, FRAME_ALLOCATOR, csr::{SSTATUS_SPIE, SSTATUS_SPP}, frame_allocator::FrameAllocator, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
         interrupt_off, interrupt_on,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
-    },
-    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm},
-    write_csr,
+    }, virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm}, write_csr
 };
 
 #[macro_export]
 macro_rules! KSTACK {
     ($n:expr) => {
-        virtmemory::TRAMPOLINE - (($n + 1) * virtmemory::PAGESIZE * 2)
+        virtmemory::TRAMPOLINE - (($n + 1) * virtmemory::PAGESIZE * 2) + virtmemory::PAGESIZE
     };
 }
 
@@ -81,13 +72,6 @@ impl Context {
     }
 }
 
-// Holds current execution state
-#[derive(Default)]
-pub struct Cpu {
-    pub current: *mut Process,
-    pub context: Context,
-}
-
 // processes are initialized on boot (state: UNUSED and kstack)
 // When new process is created pid, state and pagetable are assigned.
 //
@@ -122,8 +106,9 @@ impl Process {
 
     unsafe fn sched(&mut self) {
         unsafe {
-            let cpu = core::ptr::addr_of_mut!(CPU);
-            switch(&mut self.context, &mut (*cpu).context);
+            let interrupt_prev_state = (*CPU).interrupt_prev_state;
+            switch(&mut self.context, &mut (*CPU).context);
+            (*CPU).interrupt_prev_state = interrupt_prev_state;
         }
     }
 
@@ -135,12 +120,13 @@ impl Process {
         let _stack_base = pagetree.end();
 
         // alloc guardpage
-        pagetree.alloc(PAGESIZE, 0)?;
+        pagetree.grow(PAGESIZE, 0).unwrap();
 
         // alloc user stack
-        pagetree.alloc(PAGESIZE, PTE_W | PTE_R)?;
+        pagetree.grow(PAGESIZE, PTE_W | PTE_R).unwrap();
 
         let sp = pagetree.end();
+        print!("stack: 0x{:x}\n", sp);
 
         // prepare arguments on stack
         // TODO: argc, argv
@@ -206,11 +192,12 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
         for proc in kernel.process_table.iter_mut() {
             if proc.state == ProcState::RUNNABLE {
                 proc.state = ProcState::RUNNING;
+                print!("Swiching to process {:?}\n", proc.pid);
+                print!("stack pointer 0x{:x}\n", proc.trapframe.sp);
                 unsafe {
-                    CPU.current = proc as *mut Process;
-                    let cpu = core::ptr::addr_of_mut!(CPU);
-                    switch(&mut (*cpu).context, &mut proc.context);
-                    CPU.current = ptr::null_mut();
+                    (*CPU).current = proc as *mut Process;
+                    switch(&mut (*CPU).context, &mut proc.context);
+                    (*CPU).current = ptr::null_mut();
                 }
             }
         }
@@ -222,7 +209,7 @@ pub fn forkret() {
     // TODO: exec first proc (init) here (or not)
     let mut proc;
     unsafe {
-        proc = &mut *CPU.current;
+        proc = &mut (*(*CPU).current);
     }
 
     prepare_return(&mut proc);
@@ -246,6 +233,7 @@ pub fn prepare_return(proc: &mut Process) {
     let uservec_addr = uservec as *const () as u32;
     let uservec_off = uservec_addr - trampoline;
     unsafe { write_csr!(stvec, TRAMPOLINE + uservec_off) };
+    // print!("uservec: 0x{:x}\n", TRAMPOLINE + uservec_off);
 
     proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
     proc.trapframe.kernel_sp = proc.kstack + PAGESIZE;
