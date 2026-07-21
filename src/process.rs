@@ -6,7 +6,7 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    CPU, FRAME_ALLOCATOR, csr::{SSTATUS_SPIE, SSTATUS_SPP}, frame_allocator::FrameAllocator, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
+    CPU, FRAME_ALLOCATOR, csr::{SSTATUS_SPIE, SSTATUS_SPP}, allocator::FrameAllocator, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
         interrupt_off, interrupt_on,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
@@ -235,6 +235,7 @@ pub fn prepare_return(proc: &mut Process) {
     unsafe { write_csr!(stvec, TRAMPOLINE + uservec_off) };
     // print!("uservec: 0x{:x}\n", TRAMPOLINE + uservec_off);
 
+    // Needed for next trap into kernel
     proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
     proc.trapframe.kernel_sp = proc.kstack + PAGESIZE;
     proc.trapframe.trap_handler = usertrap as *const () as u32;

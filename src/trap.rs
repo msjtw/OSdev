@@ -167,6 +167,7 @@ pub extern "C" fn usertrap() -> u32 {
         //     "user>TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
         //     sepc, sstatus, scause
         // );
+        print!("user> kernel_sp=0x{:08x}\n", proc.trapframe.kernel_sp);
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
@@ -180,7 +181,7 @@ pub extern "C" fn usertrap() -> u32 {
             8 => {
                 // syscall
                 proc.trapframe.epc += 4;
-                syscall();
+                syscall(proc);
             }
             0x80000005 => {
                 let time = read_csr!(time);

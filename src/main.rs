@@ -2,8 +2,8 @@
 #![no_main]
 #![feature(allocator_api)]
 
+pub mod allocator;
 mod csr;
-pub mod frame_allocator;
 mod kernel;
 mod process;
 mod trap;
@@ -12,28 +12,22 @@ pub mod virtmemory;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::format;
-use buddy_system_allocator::LockedHeap;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::{null_mut, write_volatile};
 
 use crate::kernel::{Cpu, Kernel};
-use crate::process::Process;
 use crate::trap::init_trap;
 use crate::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
-////
 const USER_BYTES: &[u8; 3433] = include_bytes!("../../user/_div.bin");
 
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
+static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
 
-static FRAME_ALLOCATOR: frame_allocator::FrameAllocator = frame_allocator::FrameAllocator {};
-
-// #[unsafe(no_mangle)]
-// unsafe extern  static STACK: [u8; 4096] = [0; 4096];
+static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {};
 
 static mut CPU: *mut Cpu = null_mut();
 
@@ -60,15 +54,11 @@ macro_rules! print {
         $crate::uart_print("")
     };
     ($($arg:tt)*) => {{
-        unsafe {
-            (*crate::CPU).push_interrupt_off();
-            $crate::uart_print(&format!($($arg)*));
-            (*crate::CPU).pop_interrupt_off();
-        }
+        $crate::uart_print(&format!($($arg)*));
     }};
 }
 
-fn uart_print(message: &str) {
+pub fn uart_print(message: &str) {
     let uart = virtmemory::UART as *mut u8;
     for c in message.bytes() {
         unsafe {
@@ -86,6 +76,13 @@ pub extern "C" fn main() -> ! {
     // TODO: How to implement memory so all acceses dont have to be unsafe.
     //       Can I map a slice [u8] over whole avaliable ram?
 
+    // NOTE: Temporary stack allocated cpu struct used to initialize memory.
+    // Later replaced with heap allocated one in Kernel.
+    let mut tmp_cpu = Cpu::default();
+    unsafe {
+        CPU = &raw mut tmp_cpu;
+    }
+
     // Init physical memory allocator.
     unsafe {
         let ekernel = &virtmemory::ekernel as *const u32 as usize;
@@ -93,7 +90,6 @@ pub extern "C" fn main() -> ! {
             .lock()
             .init(ekernel, RAMEND as usize - ekernel);
     }
-
 
     init_trap();
     let mut kernel = Box::new(Kernel::default());
@@ -105,9 +101,12 @@ pub extern "C" fn main() -> ! {
 
     kernel.init().expect("Kernel init fail");
 
-
     kernel.initproc(4).unwrap();
-    kernel.kvm.as_mut().expect("KVM not initialized").start_kvm();
+    kernel
+        .kvm
+        .as_mut()
+        .expect("KVM not initialized")
+        .start_kvm();
     print!("Virt started\n");
 
     let user_p0 = kernel.allocproc().unwrap();

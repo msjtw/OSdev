@@ -1,11 +1,10 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
-    intrinsics::copy_nonoverlapping,
-    ptr::{null, null_mut},
+    ptr::copy_nonoverlapping,
 };
 
-use alloc::{alloc::Allocator, format};
+use alloc::{alloc::Allocator, format, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, HEAP_ALLOCATOR, print,
@@ -240,7 +239,6 @@ impl Kvm {
         )?;
 
         // map trampoline
-        print!("TRAMPOLINE: 0x{:08x}\n", TRAMPOLINE);
         map(
             kvm.pagetree,
             TRAMPOLINE,
@@ -302,7 +300,7 @@ impl Uvm {
             size: 0,
             pagetree: root_page,
         };
-        uvm.init_proc(proc);
+        uvm.init_proc(proc)?;
         Ok(uvm)
     }
 
@@ -343,7 +341,7 @@ impl Uvm {
         }
 
         let newend = USER_START + size;
-        unmap(self.pagetree, newend, self.size - size, true);
+        unmap(self.pagetree, newend, self.size - size, true)?;
         Ok(())
     }
 
@@ -379,7 +377,7 @@ impl Uvm {
             // for w in page.chunks(4) {
             //     print!("0x{:08x}\n", u32::from_le_bytes(w.try_into().unwrap()));
             // }
-            let pte = unsafe { walk(self.pagetree, va, false).ok_or(())?.read() };
+            let pte = unsafe { walk(self.pagetree, va as usize, false).ok_or(())?.read() };
             let pte = PTE::from(pte);
             // NOTE: This write will go through kernel pagetree,
             // so the dst address is va in kernel virt memory,
@@ -387,10 +385,6 @@ impl Uvm {
             unsafe {
                 let src_addr = page.as_ptr() as *const u8;
                 let dst_addr = pte.pa as *mut u8;
-                print!(
-                    "src=0x{:x?} dst=0x{:x?} (va=0x{:x})\n",
-                    src_addr, dst_addr, va
-                );
                 copy_nonoverlapping(src_addr, dst_addr, PAGESIZE as usize);
             };
             va += PAGESIZE;
@@ -406,25 +400,20 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
     // - size > 0 and end < RAMEND
 
     if phys % PAGESIZE != 0 {
-        print!("mapping to unalinged frame 0x{:08x}\n", phys);
-        panic!();
+        panic!("mapping to unalinged frame 0x{:08x}\n", phys);
     }
     if virt % PAGESIZE != 0 {
-        print!("mapping unalinged page 0x{:08x}\n", virt);
-        panic!();
+        panic!("mapping unalinged page 0x{:08x}\n", virt);
     }
     if size % PAGESIZE != 0 {
-        print!("mapping not whole pages\n");
-        panic!();
+        panic!("mapping not whole pages\n");
     }
-
-    print!("mapping x0{:x} -> 0x{:x}\n", virt, phys);
 
     let mut vaddr = virt;
     let mut paddr = phys;
     let vaddr_end = virt + size;
     while vaddr < vaddr_end {
-        let pte_addr = walk(pagetree, vaddr, true).ok_or(())?;
+        let pte_addr = walk(pagetree, vaddr as usize, true).ok_or(())?;
         // NOTE: check for remap (I don't think it's possible)
 
         let mut pte = PTE::from_addr(paddr as u32);
@@ -449,7 +438,7 @@ fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()>
 
     let mut va = virt;
     while va < virt + size {
-        let pte_addr = match walk(pagetree, va, true) {
+        let pte_addr = match walk(pagetree, va as usize, true) {
             Some(x) => x,
             None => continue,
         };
@@ -469,7 +458,7 @@ fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()>
 
 // returns leaf pte addr for given virtual address
 // with support for megapages
-fn walk(pagetree: *mut u32, virt_a: u32, alloc: bool) -> Option<*mut u32> {
+fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Option<*mut u32> {
     let va = VA::from(virt_a as u32);
 
     let mut a = pagetree;
@@ -497,6 +486,46 @@ fn walk(pagetree: *mut u32, virt_a: u32, alloc: bool) -> Option<*mut u32> {
     let pte_addr = a.wrapping_add(index as usize);
 
     Some(pte_addr)
+}
+
+// return physical address for virual
+fn walkaddr(pagetree: *mut u32, virt_a: usize) -> Option<usize> {
+    let pte = unsafe { walk(pagetree, virt_a, false).ok_or(()).ok()?.read() };
+    Some(PTE::from(pte).pa as usize)
+}
+
+// copy from given address space INTO kernel
+pub fn copy_in<T: Clone>(uv: &Uvm, addr: usize) -> Result<T, ()> {
+    let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
+    unsafe {
+        let val = (user_addr as *const T).read();
+        Ok(val)
+    }
+}
+
+// Copy continuous bytes 
+pub fn copy_in_bytes(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<u8>, ()> {
+    let mut bytes = Vec::new();
+    let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
+
+    for _ in 0..len {
+        let byte = unsafe {
+            (user_addr as *const u8).read()
+        };
+        print!("{}", byte);
+        bytes.push(byte);
+    }
+
+    Ok(bytes)
+}
+
+// copy from kernel OUT to user
+pub fn copy_out<T>(uv: &Uvm, addr: usize, data: T) -> Result<(), ()> {
+    let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
+    unsafe {
+        (user_addr as *mut T).write(data);
+    }
+    Ok(())
 }
 
 fn align_up(val: u32, alignment: u32) -> u32 {

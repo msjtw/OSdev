@@ -1,11 +1,7 @@
 #![allow(dead_code)]
 
-use core::arch::asm;
-
-use crate::print;
-use alloc::format;
-
-
+use crate::{print, process::Process, uart_print, virtmemory::copy_in_bytes};
+use alloc::{format, string::String};
 
 // System call numbers
 pub const SYS_FORK: usize = 1;
@@ -34,25 +30,43 @@ pub const SYS_CLOSE: usize = 21;
 // syscall number: a7
 // arguments: a0-a5
 // return value: a0
+// all in user registers in trapframe
 
-pub fn syscall() {
-    let sys_num: usize;
+pub fn syscall(proc: &mut Process) {
+    let sys_num = proc.trapframe.a7 as usize;
     // let args: [u32; 6];
 
-    unsafe {
-        asm!(
-            "mv {0}, a7",
-            out(reg) sys_num,
-        );
-    }
     // print!("call num: {sys_num}\n")
 
     match sys_num {
         SYS_WRITE => {
-            print!("w");
+            // fd, addr, size
+            sys_write(proc);
         }
         _ => {
             panic!("unimplemented syscall {sys_num}")
         }
+    }
+}
+
+fn sys_write(proc: &mut Process) {
+    unsafe {
+        (*crate::CPU).push_interrupt_off();
+    }
+    let fd = proc.trapframe.a0 as usize;
+    let addr = proc.trapframe.a1 as usize;
+    let size = proc.trapframe.a2 as usize;
+
+    if fd != 1 {
+        panic!("Write to fd {fd}");
+    }
+
+    let bytes = copy_in_bytes(&proc.pagetable.unwrap(), addr, size).unwrap();
+    let msg = String::from_utf8(bytes).unwrap();
+
+    uart_print(&msg);
+    proc.trapframe.a0 = 0;
+    unsafe {
+        (*crate::CPU).pop_interrupt_off();
     }
 }
