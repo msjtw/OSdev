@@ -78,6 +78,7 @@ pub extern "C" fn main() -> ! {
 
     // NOTE: Temporary stack allocated cpu struct used to initialize memory.
     // Later replaced with heap allocated one in Kernel.
+    // FIX: This needs to be fixed.
     let mut tmp_cpu = Cpu::default();
     unsafe {
         CPU = &raw mut tmp_cpu;

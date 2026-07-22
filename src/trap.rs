@@ -4,7 +4,10 @@ use core::arch::naked_asm;
 
 use alloc::format;
 
-use crate::{CPU, kernel::syscall::syscall, print, process::prepare_return, read_csr, write_csr};
+use crate::{
+    CPU, csr::SSTATUS_SPP, kernel::syscall::syscall, print, process::prepare_return, read_csr,
+    write_csr,
+};
 
 const SIE_SEIE: usize = 1 << 9;
 const SIE_STIE: usize = 1 << 5;
@@ -123,15 +126,26 @@ extern "C" fn kerneltrap() {
         let scause = read_csr!(scause);
         let stval = read_csr!(stval);
 
+        if (sstatus & SSTATUS_SPP as usize) == 0 {
+            panic!("kerneltrap: not from supervisor mode");
+        }
+        if interrupt_read() {
+            panic!("kerneltrap: interrupts enabled");
+        }
+
         let mut pid = None;
         if !(*CPU).current.is_null() {
             pid = (*(*CPU).current).pid;
         }
 
-        print!(
-            ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
-            pid, sepc, sstatus, scause, stval,
-        );
+        // FIX: On timer interrupt during handling of syscall this print traps
+        // with Store/AMO page fault at some weird address (kernel stack guard)
+        // I DONT KNOW WHY ???
+
+        // print!(
+        //     ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
+        //     pid, sepc, sstatus, scause, stval,
+        // );
 
         // Because trap originated in kernel it coudl (what?)
         match scause {
@@ -159,21 +173,22 @@ pub extern "C" fn usertrap() -> u32 {
     let proc;
     unsafe {
         let sepc = read_csr!(sepc) as u32;
-        let _sstatus = read_csr!(sstatus);
+        let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
         proc = &mut (*(*CPU).current);
+
+        if (sstatus & SSTATUS_SPP as usize) != 0 {
+            panic!("kerneltrap: not from user mode");
+        }
 
         // print!(
         //     "user>TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}\n",
         //     sepc, sstatus, scause
         // );
-        print!("user> kernel_sp=0x{:08x}\n", proc.trapframe.kernel_sp);
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
         write_csr!(stvec, kernelvec);
-        // with right trapvec enable interrupts
-        interrupt_on();
 
         proc.trapframe.epc = sepc;
 
@@ -181,6 +196,12 @@ pub extern "C" fn usertrap() -> u32 {
             8 => {
                 // syscall
                 proc.trapframe.epc += 4;
+
+                // with right trapvec enable interrupts
+                // NOTE: We cant enable them on timer interrupt because
+                // it will immidiatly trap to kernelvec and mess up sp.
+                interrupt_on();
+
                 syscall(proc);
             }
             0x80000005 => {

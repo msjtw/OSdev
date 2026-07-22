@@ -7,5 +7,6 @@ target = "riscv32ima-unknown-none-elf"
 
 [target.riscv32ima-unknown-none-elf]
 rustflags = ["-C", "link-arg=rvem_layout.ld"]
-runner = "qemu-system-riscv32 -machine virt -nographic -kernel"
-# runner = "qemu-system-riscv32 -machine virt -s -S -nographic -kernel"
+# runner = "qemu-system-riscv32 -machine virt -nographic -kernel"
+runner = "qemu-system-riscv32 -machine virt -s -S -nographic -kernel "
+# runner = "qemu-system-riscv32 -machine virt -s -S -nographic -d in_asm,exec -D qemu.log -kernel "
