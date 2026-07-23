@@ -67,14 +67,17 @@ pub fn uart_print(message: &str) {
     }
 }
 
+// FIX: Stack guard pages don't work,
+// stack-overflow causes infinite trapping.
+
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> ! {
     // NOTE: without this they are optimized away
     let _ = uservec as *const () as usize;
     let _ = userret as *const () as usize;
 
-    // TODO: How to implement memory so all acceses dont have to be unsafe.
-    //       Can I map a slice [u8] over whole avaliable ram?
+    // TODO: How to implement memory so all accesses don't have to be unsafe.
+    //       Can I map a slice [u8] over whole available ram?
 
     // NOTE: Temporary stack allocated cpu struct used to initialize memory.
     // Later replaced with heap allocated one in Kernel.

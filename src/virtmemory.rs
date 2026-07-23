@@ -501,7 +501,8 @@ fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Option<*mut u32> {
 // return physical address for virual
 fn walkaddr(pagetree: *mut u32, virt_a: usize) -> Option<usize> {
     let pte = unsafe { walk(pagetree, virt_a, false).ok_or(()).ok()?.read() };
-    Some(PTE::from(pte).pa as usize)
+    let pa = PTE::from(pte).pa as usize + (virt_a % PAGESIZE as usize);
+    Some(pa as usize)
 }
 
 // copy from given address space INTO kernel
@@ -520,7 +521,6 @@ pub fn copy_in_bytes(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<u8>, ()> {
 
     for _ in 0..len {
         let byte = unsafe { (user_addr as *const u8).read() };
-        print!("0x{} 0x{:08x}: {}\n", addr, user_addr, byte);
         bytes.push(byte);
     }
 
