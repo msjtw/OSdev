@@ -4,10 +4,11 @@ use alloc::{boxed::Box, format, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, KSTACK, print,
-    process::{Context, ProcState, Process, forkret, trapframe::Trapframe},
+    process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe},
     trap::{interrupt_off, interrupt_on, interrupt_read},
     virtmemory::{self, Kvm, PAGESIZE, Uvm},
 };
+
 
 // Holds current execution state
 #[derive(Default)]
@@ -81,7 +82,7 @@ impl Kernel {
 
                 p.context = Context::default();
                 p.context.ra = forkret as *const u32 as u32;
-                p.context.sp = p.kstack + PAGESIZE;
+                p.context.sp = p.kstack + KERNEL_STACK_PAGES * PAGESIZE;
 
                 return Some(p);
             }

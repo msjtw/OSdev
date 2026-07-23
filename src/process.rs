@@ -6,17 +6,33 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    CPU, FRAME_ALLOCATOR, csr::{SSTATUS_SPIE, SSTATUS_SPP}, allocator::FrameAllocator, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
+    CPU, FRAME_ALLOCATOR,
+    allocator::FrameAllocator,
+    csr::{SSTATUS_SPIE, SSTATUS_SPP},
+    kernel::Kernel,
+    print,
+    process::trapframe::Trapframe,
+    read_csr,
+    trap::{
         interrupt_off, interrupt_on,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
-    }, virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm}, write_csr
+    },
+    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm},
+    write_csr,
 };
+
+// NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
+// Normaly (in c) 1 page stack for kernel is more than enough.
+// But this is rust and fmt (format!) allocates shitload on stack.
+pub const KERNEL_STACK_PAGES: u32 = 2;
 
 #[macro_export]
 macro_rules! KSTACK {
     ($n:expr) => {
-        virtmemory::TRAMPOLINE - (($n + 1) * virtmemory::PAGESIZE * 2) + virtmemory::PAGESIZE
+        virtmemory::TRAMPOLINE
+            - (($n + 1) * virtmemory::PAGESIZE * (crate::process::KERNEL_STACK_PAGES + 1))
+            + virtmemory::PAGESIZE
     };
 }
 
@@ -237,7 +253,7 @@ pub fn prepare_return(proc: &mut Process) {
 
     // Needed for next trap into kernel
     proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
-    proc.trapframe.kernel_sp = proc.kstack + PAGESIZE;
+    proc.trapframe.kernel_sp = proc.kstack + KERNEL_STACK_PAGES * PAGESIZE;
     proc.trapframe.trap_handler = usertrap as *const () as u32;
     proc.trapframe.hartid = 0;
 

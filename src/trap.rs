@@ -138,14 +138,10 @@ extern "C" fn kerneltrap() {
             pid = (*(*CPU).current).pid;
         }
 
-        // FIX: On timer interrupt during handling of syscall this print traps
-        // with Store/AMO page fault at some weird address (kernel stack guard)
-        // I DONT KNOW WHY ???
-
-        // print!(
-        //     ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
-        //     pid, sepc, sstatus, scause, stval,
-        // );
+        print!(
+            ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}\n",
+            pid, sepc, sstatus, scause, stval,
+        );
 
         // Because trap originated in kernel it coudl (what?)
         match scause {

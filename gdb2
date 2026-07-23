@@ -1,0 +1,11 @@
+set architecture riscv:rv32
+target remote :1234
+symbol-file ~/Documents/osdev/rust-baremetal/target/riscv32ima-unknown-none-elf/debug/main
+break main
+break main::virtmemory::copy_in_bytes
+c
+set logging file qemu.log
+set logging enabled on
+
+
+

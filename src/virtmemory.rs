@@ -252,8 +252,18 @@ impl Kvm {
 
     // maps and allocates kernel stacks
     pub fn alloc_kstack(&mut self, va: u32) {
-        let kstack_page = FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as u32;
-        map(self.pagetree, va, kstack_page, PAGESIZE, PTE_R | PTE_W).unwrap();
+        for i in 0..crate::process::KERNEL_STACK_PAGES {
+            let kstack_page =
+                FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as u32;
+            map(
+                self.pagetree,
+                va + i * PAGESIZE,
+                kstack_page,
+                PAGESIZE,
+                PTE_R | PTE_W,
+            )
+            .unwrap();
+        }
     }
 
     pub fn start_kvm(&self) {
@@ -503,16 +513,14 @@ pub fn copy_in<T: Clone>(uv: &Uvm, addr: usize) -> Result<T, ()> {
     }
 }
 
-// Copy continuous bytes 
+// Copy continuous bytes
 pub fn copy_in_bytes(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<u8>, ()> {
     let mut bytes = Vec::new();
     let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
 
     for _ in 0..len {
-        let byte = unsafe {
-            (user_addr as *const u8).read()
-        };
-        print!("{}", byte);
+        let byte = unsafe { (user_addr as *const u8).read() };
+        print!("0x{} 0x{:08x}: {}\n", addr, user_addr, byte);
         bytes.push(byte);
     }
 
