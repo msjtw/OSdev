@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{print, process::Process, uart_print, virtmemory::copy_in_bytes};
+use crate::{print, process::Process, uart_print, virtmemory::copy_in_cont};
 use alloc::{format, string::String};
 
 // System call numbers
@@ -61,7 +61,7 @@ fn sys_write(proc: &mut Process) {
         panic!("Write to fd {fd}");
     }
 
-    let bytes = copy_in_bytes(&proc.pagetable.unwrap(), addr, size).unwrap();
+    let bytes = copy_in_cont(&proc.pagetable.unwrap(), addr, size).unwrap();
     let msg = String::from_utf8(bytes).unwrap();
 
     uart_print(&msg);

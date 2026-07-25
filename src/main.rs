@@ -11,7 +11,7 @@ pub mod virtmemory;
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::format;
+use alloc::{format, vec};
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -22,7 +22,7 @@ use crate::trap::init_trap;
 use crate::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
-const USER_BYTES: &[u8; 3433] = include_bytes!("../../user/_div.bin");
+const USER_BYTES: &[u8; 3449] = include_bytes!("../../user/_div.bin");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -114,9 +114,9 @@ pub extern "C" fn main() -> ! {
     print!("Virt started\n");
 
     let user_p0 = kernel.allocproc().unwrap();
-    user_p0.kexec(USER_BYTES).unwrap();
+    user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
     let user_p1 = kernel.allocproc().unwrap();
-    user_p1.kexec(USER_BYTES).unwrap();
+    user_p1.kexec(USER_BYTES, vec!["17"]).unwrap();
 
     process::scheduler(kernel);
 }

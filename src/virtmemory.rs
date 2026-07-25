@@ -515,12 +515,12 @@ pub fn copy_in<T: Clone>(uv: &Uvm, addr: usize) -> Result<T, ()> {
 }
 
 // Copy continuous bytes
-pub fn copy_in_bytes(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<u8>, ()> {
+pub fn copy_in_cont<T: Copy>(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<T>, ()> {
     let mut bytes = Vec::new();
     let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
 
-    for _ in 0..len {
-        let byte = unsafe { (user_addr as *const u8).read() };
+    for i in 0..len {
+        let byte = unsafe { (user_addr as *const T).wrapping_add(i).read() };
         bytes.push(byte);
     }
 
@@ -533,6 +533,17 @@ pub fn copy_out<T>(uv: &Uvm, addr: usize, data: T) -> Result<(), ()> {
     unsafe {
         (user_addr as *mut T).write(data);
     }
+    Ok(())
+}
+
+// Copy continuous bytes
+pub fn copy_out_cont<T: Copy>(uv: &Uvm, addr: usize, data: &[T]) -> Result<(), ()> {
+    let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
+
+    for i in 0..data.len() {
+        unsafe { (user_addr as *mut T).wrapping_add(i).write(data[i]) };
+    }
+
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 pub mod trapframe;
 
-use alloc::format;
+use alloc::{format, vec, vec::Vec};
 use core::{arch::naked_asm, mem::transmute, ptr};
 
 use alloc::boxed::Box;
@@ -18,7 +18,7 @@ use crate::{
         trampoline::{_trampoline, userret, uservec},
         usertrap,
     },
-    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm},
+    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
     write_csr,
 };
 
@@ -95,6 +95,7 @@ pub struct Process {
     pub pid: Option<u32>,
     pub state: ProcState,
     pub kstack: u32,                        // virt addr of kernel stack page
+    pub parent: usize,
     pub pagetable: Option<virtmemory::Uvm>, // user virt pagetable
     pub context: Context,
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
@@ -106,6 +107,7 @@ impl Process {
             pid: None,
             state: ProcState::default(),
             kstack: KSTACK!(n),
+            parent: 0,
             pagetable: None,
             context: Context::default(),
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
@@ -128,12 +130,10 @@ impl Process {
         }
     }
 
-    pub fn kexec(&mut self, img: &[u8]) -> Result<(), ()> {
+    pub fn kexec(&mut self, img: &[u8], argv: Vec<&str>) -> Result<(), ()> {
         let mut pagetree = Uvm::new(&self)?;
         pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X)?;
         pagetree.load(USER_START, img)?;
-
-        let _stack_base = pagetree.end();
 
         // alloc guardpage
         pagetree.grow(PAGESIZE, 0).unwrap();
@@ -141,16 +141,39 @@ impl Process {
         // alloc user stack
         pagetree.grow(PAGESIZE, PTE_W | PTE_R).unwrap();
 
-        let sp = pagetree.end();
-        print!("stack: 0x{:x}\n", sp);
+        let mut sp = pagetree.end() as usize;
+        let stack_base = sp - PAGESIZE as usize;
+
+        // TODO: add name as argv[0]
+
+        // Copy args to stack
+        let mut ustack = vec![];
+        for arg in &argv {
+            sp -= arg.len();
+            sp &= !0b111; // sp is aligned to 16 bytes
+            if sp < stack_base {
+                return Err(());
+            }
+            copy_out_cont(&pagetree, sp, arg.as_bytes());
+            // save addr of each arg
+            ustack.push(sp);
+        }
+        ustack.push(0);
+
+        // copy arg addr onto stack
+        sp -= ustack.len() * size_of::<usize>(); // no need to align
+        if sp < stack_base {
+            return Err(());
+        }
+        copy_out_cont(&pagetree, sp, &ustack);
 
         // prepare arguments on stack
-        // TODO: argc, argv
-        self.trapframe.a0 = 0;
+        self.trapframe.a0 = argv.len() as u32;
+        self.trapframe.a1 = sp as u32;
 
         // switch to new pagetree
         self.pagetable = Some(pagetree);
-        self.trapframe.sp = sp;
+        self.trapframe.sp = sp as u32;
         // self.trapframe.epc = 0x100f;
         self.trapframe.epc = USER_START;
 
