@@ -92,10 +92,10 @@ impl Context {
 // When new process is created pid, state and pagetable are assigned.
 //
 pub struct Process {
-    pub pid: Option<u32>,
+    pub pid: Option<usize>,
     pub state: ProcState,
     pub kstack: u32,                        // virt addr of kernel stack page
-    pub parent: usize,
+    pub parent: Option<usize>,
     pub pagetable: Option<virtmemory::Uvm>, // user virt pagetable
     pub context: Context,
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
@@ -107,7 +107,7 @@ impl Process {
             pid: None,
             state: ProcState::default(),
             kstack: KSTACK!(n),
-            parent: 0,
+            parent: None,
             pagetable: None,
             context: Context::default(),
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
@@ -128,6 +128,23 @@ impl Process {
             switch(&mut self.context, &mut (*CPU).context);
             (*CPU).interrupt_prev_state = interrupt_prev_state;
         }
+    }
+
+    pub fn fork(&mut self, kernel: &mut Kernel) -> Result<usize, ()>{
+        let child_proc = kernel.allocproc().ok_or(())?;
+
+        // TODO: copy uvm
+        
+        child_proc.trapframe = Box::new_in(*self.trapframe, &FRAME_ALLOCATOR);
+        // child_proc.pagetable = Some(());
+        // child_proc.pagetable.clone_vm_from(self)?;
+
+        // return 0 in child
+        child_proc.trapframe.a0 = 0;
+        // and cpid in parent
+        self.trapframe.a0 = child_proc.pid.unwrap() as u32;
+
+        child_proc.pid.ok_or(())
     }
 
     pub fn kexec(&mut self, img: &[u8], argv: Vec<&str>) -> Result<(), ()> {
@@ -154,7 +171,7 @@ impl Process {
             if sp < stack_base {
                 return Err(());
             }
-            copy_out_cont(&pagetree, sp, arg.as_bytes());
+            copy_out_cont(&pagetree, sp, arg.as_bytes())?;
             // save addr of each arg
             ustack.push(sp);
         }
@@ -165,7 +182,7 @@ impl Process {
         if sp < stack_base {
             return Err(());
         }
-        copy_out_cont(&pagetree, sp, &ustack);
+        copy_out_cont(&pagetree, sp, &ustack)?;
 
         // prepare arguments on stack
         self.trapframe.a0 = argv.len() as u32;
@@ -252,7 +269,7 @@ pub fn forkret() {
     }
 
     prepare_return(&mut proc);
-    let satp = proc.pagetable.unwrap().get_satp().into();
+    let satp = proc.pagetable.as_ref().unwrap().get_satp().into();
     // NOTE: userret is in 2 places, in kernel text and also mapped into
     // high address in TRAMPOLINE, we need to call it through TRAMPOLINE address.
     let userret_addr = userret as *const () as usize;

@@ -44,7 +44,7 @@ pub struct Kernel {
     pub kvm: Option<virtmemory::Kvm>,
     pub cpus: Cpu,
     pub process_table: Vec<Process>,
-    pub pid: u32,
+    pub pid: usize,
 }
 
 impl Kernel {
@@ -72,13 +72,13 @@ impl Kernel {
             if p.state == ProcState::UNUSED {
                 p.pid = Some(self.pid);
                 self.pid += 1;
-                p.state = ProcState::RUNNABLE;
+                p.state = ProcState::USED;
                 p.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
 
                 // get empty user page table
-                let pagetable = Uvm::new(p).unwrap();
-
-                p.pagetable = Some(pagetable);
+                // let pagetable = Uvm::new(p).unwrap();
+                //
+                // p.pagetable = Some(pagetable);
 
                 p.context = Context::default();
                 p.context.ra = forkret as *const u32 as u32;

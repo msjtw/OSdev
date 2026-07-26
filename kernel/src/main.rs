@@ -113,10 +113,14 @@ pub extern "C" fn main() -> ! {
         .start_kvm();
     print!("Virt started\n");
 
+    // Start init
     let user_p0 = kernel.allocproc().unwrap();
     user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
+    user_p0.state = process::ProcState::RUNNABLE;
+
     let user_p1 = kernel.allocproc().unwrap();
     user_p1.kexec(USER_BYTES, vec!["17"]).unwrap();
+    user_p1.state = process::ProcState::RUNNABLE;
 
     process::scheduler(kernel);
 }

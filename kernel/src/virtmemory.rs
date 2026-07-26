@@ -4,10 +4,10 @@ use core::{
     ptr::copy_nonoverlapping,
 };
 
-use alloc::{alloc::Allocator, format, vec::Vec};
+use alloc::{alloc::Allocator, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, HEAP_ALLOCATOR, print,
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR,
     process::{Process, trapframe::Trapframe},
     trap::trampoline::_trampoline,
     write_csr,
@@ -285,7 +285,6 @@ impl Kvm {
     // continous virt to virt + size to continous phys to phys + size
 }
 
-#[derive(Copy, Clone)]
 pub struct Uvm {
     begin: u32,
     size: u32,
@@ -401,6 +400,13 @@ impl Uvm {
         }
         Ok(())
     }
+
+    // pub fn clone_vm_from(&self) -> Result<Uvm, ()> {
+    //     let new_vm = Uvm::new(proc);
+    //
+    //     let ptr = USER_START as *const u8;
+    //     while ptr < 
+    // }
 }
 
 // map virtual memory range to physical memory range
@@ -505,7 +511,7 @@ fn walkaddr(pagetree: *mut u32, virt_a: usize) -> Option<usize> {
     Some(pa as usize)
 }
 
-// copy from given address space INTO kernel
+// copy from given address space INTO current
 pub fn copy_in<T: Clone>(uv: &Uvm, addr: usize) -> Result<T, ()> {
     let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
     unsafe {
@@ -527,7 +533,7 @@ pub fn copy_in_cont<T: Copy>(uv: &Uvm, addr: usize, len: usize) -> Result<Vec<T>
     Ok(bytes)
 }
 
-// copy from kernel OUT to user
+// copy from current OUT to user
 pub fn copy_out<T>(uv: &Uvm, addr: usize, data: T) -> Result<(), ()> {
     let user_addr = walkaddr(uv.pagetree, addr).ok_or(())?;
     unsafe {
@@ -547,12 +553,12 @@ pub fn copy_out_cont<T: Copy>(uv: &Uvm, addr: usize, data: &[T]) -> Result<(), (
     Ok(())
 }
 
-fn align_up(val: u32, alignment: u32) -> u32 {
+fn _align_up(val: u32, alignment: u32) -> u32 {
     let tmp = val + alignment - 1;
-    align_down(tmp, alignment)
+    _align_down(tmp, alignment)
 }
 
-fn align_down(val: u32, alignment: u32) -> u32 {
+fn _align_down(val: u32, alignment: u32) -> u32 {
     let rem = val % alignment;
     val - rem
 }

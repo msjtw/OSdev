@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use crate::{print, process::Process, uart_print, virtmemory::copy_in_cont};
-use alloc::{format, string::String};
+use crate::{process::Process, uart_print, virtmemory::copy_in_cont};
+use alloc::{string::String};
 
 // System call numbers
 pub const SYS_FORK: usize = 1;
@@ -61,7 +61,7 @@ fn sys_write(proc: &mut Process) {
         panic!("Write to fd {fd}");
     }
 
-    let bytes = copy_in_cont(&proc.pagetable.unwrap(), addr, size).unwrap();
+    let bytes = copy_in_cont(proc.pagetable.as_ref().unwrap(), addr, size).unwrap();
     let msg = String::from_utf8(bytes).unwrap();
 
     uart_print(&msg);
