@@ -217,6 +217,6 @@ pub extern "C" fn usertrap() -> u32 {
         }
         prepare_return(proc);
     }
-    let satp = proc.pagetable.as_ref().unwrap().get_satp();
+    let satp = proc.pagetable.get_satp();
     return satp.into();
 }

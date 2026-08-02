@@ -61,7 +61,7 @@ fn sys_write(proc: &mut Process) {
         panic!("Write to fd {fd}");
     }
 
-    let bytes = copy_in_cont(proc.pagetable.as_ref().unwrap(), addr, size).unwrap();
+    let bytes = copy_in_cont(&proc.pagetable, addr, size).unwrap();
     let msg = String::from_utf8(bytes).unwrap();
 
     uart_print(&msg);

@@ -60,6 +60,7 @@ struct PTE {
     pub w: bool,
     pub r: bool,
     pub v: bool,
+    pub perm: u32,
 }
 
 impl From<u32> for PTE {
@@ -78,6 +79,7 @@ impl From<u32> for PTE {
             w: (pte & 0b00000000000000000000000000000100) >= 1,
             r: (pte & 0b00000000000000000000000000000010) >= 1,
             v: (pte & 0b00000000000000000000000000000001) >= 1,
+            perm: (pte & 0b1110),
         }
     }
 }
@@ -291,8 +293,39 @@ pub struct Uvm {
     pagetree: *mut u32,
 }
 
+impl Clone for Uvm {
+    fn clone(&self) -> Self {
+        let vm = Uvm::new().unwrap();
+
+        for addr in (USER_START..self.end()).step_by(PAGESIZE as usize) {
+            let pte = unsafe { walk(self.pagetree, addr as usize, false).unwrap().read() };
+            let pte = PTE::from(pte);
+            if !pte.v {
+                continue;
+            }
+            let from = pte.pa as *const u8;
+            let to = FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8;
+            unsafe { copy_nonoverlapping(from, to, PAGESIZE as usize) };
+
+            map(vm.pagetree, addr, to as u32, PAGESIZE, pte.perm).unwrap();
+        }
+
+        vm
+    }
+}
+
 // The address space is continuous and starts at virt 0x80000000
 impl Uvm {
+    pub fn new() -> Result<Uvm, ()> {
+        let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
+        let uvm = Uvm {
+            begin: USER_START,
+            size: 0,
+            pagetree: root_page,
+        };
+        Ok(uvm)
+    }
+
     pub fn get_satp(&self) -> SATP {
         let ppn = (self.pagetree as u32) >> 12;
         SATP {
@@ -300,17 +333,6 @@ impl Uvm {
             asid: 0,
             ppn: ppn,
         }
-    }
-
-    pub fn new(proc: &Process) -> Result<Uvm, ()> {
-        let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let mut uvm = Uvm {
-            begin: USER_START,
-            size: 0,
-            pagetree: root_page,
-        };
-        uvm.init_proc(proc)?;
-        Ok(uvm)
     }
 
     pub fn free() {
@@ -354,7 +376,7 @@ impl Uvm {
         Ok(())
     }
 
-    fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
+    pub fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
         let trampoline = unsafe { &_trampoline as *const u32 as u32 };
         map(
             self.pagetree,
@@ -400,13 +422,6 @@ impl Uvm {
         }
         Ok(())
     }
-
-    // pub fn clone_vm_from(&self) -> Result<Uvm, ()> {
-    //     let new_vm = Uvm::new(proc);
-    //
-    //     let ptr = USER_START as *const u8;
-    //     while ptr < 
-    // }
 }
 
 // map virtual memory range to physical memory range

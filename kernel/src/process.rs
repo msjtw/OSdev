@@ -96,7 +96,7 @@ pub struct Process {
     pub state: ProcState,
     pub kstack: u32,                        // virt addr of kernel stack page
     pub parent: Option<usize>,
-    pub pagetable: Option<virtmemory::Uvm>, // user virt pagetable
+    pub pagetable: virtmemory::Uvm, // user virt pagetable
     pub context: Context,
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
 }
@@ -108,7 +108,7 @@ impl Process {
             state: ProcState::default(),
             kstack: KSTACK!(n),
             parent: None,
-            pagetable: None,
+            pagetable: virtmemory::Uvm::new()?,
             context: Context::default(),
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
         })
@@ -130,25 +130,31 @@ impl Process {
         }
     }
 
-    pub fn fork(&mut self, kernel: &mut Kernel) -> Result<usize, ()>{
+    pub fn kfork(&mut self, kernel: &mut Kernel) -> Result<usize, ()>{
         let child_proc = kernel.allocproc().ok_or(())?;
 
-        // TODO: copy uvm
+        let mut uvm = self.pagetable.clone();
+        uvm.init_proc(&child_proc)?;
+        child_proc.pagetable = uvm;
         
-        child_proc.trapframe = Box::new_in(*self.trapframe, &FRAME_ALLOCATOR);
-        // child_proc.pagetable = Some(());
-        // child_proc.pagetable.clone_vm_from(self)?;
+        child_proc.trapframe = Box::new_in(*self.trapframe.clone(), &FRAME_ALLOCATOR);
 
         // return 0 in child
         child_proc.trapframe.a0 = 0;
         // and cpid in parent
         self.trapframe.a0 = child_proc.pid.unwrap() as u32;
 
+        // NOTE: not sure if it's ok
+        child_proc.parent = self.pid;
+
+        child_proc.state = ProcState::RUNNABLE;
+
         child_proc.pid.ok_or(())
     }
 
     pub fn kexec(&mut self, img: &[u8], argv: Vec<&str>) -> Result<(), ()> {
-        let mut pagetree = Uvm::new(&self)?;
+        let mut pagetree = Uvm::new()?;
+        pagetree.init_proc(&self)?;
         pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X)?;
         pagetree.load(USER_START, img)?;
 
@@ -189,7 +195,7 @@ impl Process {
         self.trapframe.a1 = sp as u32;
 
         // switch to new pagetree
-        self.pagetable = Some(pagetree);
+        self.pagetable = pagetree;
         self.trapframe.sp = sp as u32;
         // self.trapframe.epc = 0x100f;
         self.trapframe.epc = USER_START;
@@ -269,7 +275,7 @@ pub fn forkret() {
     }
 
     prepare_return(&mut proc);
-    let satp = proc.pagetable.as_ref().unwrap().get_satp().into();
+    let satp = proc.pagetable.get_satp().into();
     // NOTE: userret is in 2 places, in kernel text and also mapped into
     // high address in TRAMPOLINE, we need to call it through TRAMPOLINE address.
     let userret_addr = userret as *const () as usize;
