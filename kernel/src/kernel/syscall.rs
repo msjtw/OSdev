@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{process::Process, uart_print, virtmemory::copy_in_cont};
-use alloc::{string::String};
+use alloc::string::String;
 
 // System call numbers
 pub const SYS_FORK: usize = 1;
@@ -39,10 +39,9 @@ pub fn syscall(proc: &mut Process) {
     // print!("call num: {sys_num}\n")
 
     match sys_num {
-        SYS_WRITE => {
-            // fd, addr, size
-            sys_write(proc);
-        }
+        SYS_WRITE => sys_write(proc),
+        SYS_FORK => sys_fork(proc),
+        SYS_EXEC => sys_exec(proc),
         _ => {
             panic!("unimplemented syscall {sys_num}")
         }
@@ -69,4 +68,12 @@ fn sys_write(proc: &mut Process) {
     unsafe {
         (*crate::CPU).pop_interrupt_off();
     }
+}
+
+fn sys_fork(proc: &mut Process) {
+    proc.kfork(kernel).unwrap();
+}
+
+fn sys_exec(proc: &mut Process) {
+
 }

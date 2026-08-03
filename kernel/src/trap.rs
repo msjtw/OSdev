@@ -167,11 +167,13 @@ extern "C" fn kerneltrap() {
 
 pub extern "C" fn usertrap() -> u32 {
     let proc;
+    let kernel;
     unsafe {
         let sepc = read_csr!(sepc) as u32;
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
         proc = &mut (*(*CPU).current);
+        kernel = &mut *(*CPU);
 
         if (sstatus & SSTATUS_SPP as usize) != 0 {
             panic!("kerneltrap: not from user mode");

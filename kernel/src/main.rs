@@ -12,6 +12,7 @@ pub mod virtmemory;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::{format, vec};
+use spin::Once;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -29,7 +30,9 @@ static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::
 
 static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {};
 
-static mut CPU: *mut Cpu = null_mut();
+static mut CPU: Cpu = Cpu::new();
+
+static KERNEL: Once<spin::Mutex<Kernel>> = Once::new();
 
 global_asm!(
     "
@@ -79,14 +82,6 @@ pub extern "C" fn main() -> ! {
     // TODO: How to implement memory so all accesses don't have to be unsafe.
     //       Can I map a slice [u8] over whole available ram?
 
-    // NOTE: Temporary stack allocated cpu struct used to initialize memory.
-    // Later replaced with heap allocated one in Kernel.
-    // FIX: This needs to be fixed.
-    let mut tmp_cpu = Cpu::default();
-    unsafe {
-        CPU = &raw mut tmp_cpu;
-    }
-
     // Init physical memory allocator.
     unsafe {
         let ekernel = &virtmemory::ekernel as *const u32 as usize;
@@ -97,9 +92,8 @@ pub extern "C" fn main() -> ! {
 
     init_trap();
     let mut kernel = Box::new(Kernel::default());
-    unsafe {
-        CPU = &raw mut kernel.cpus;
-    }
+
+    // KERNEL.call_once(|| spin::Mutex::new(Kernel::default()));
 
     print!("Hello world\n");
 

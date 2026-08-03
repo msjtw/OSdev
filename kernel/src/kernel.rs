@@ -9,7 +9,6 @@ use crate::{
     virtmemory::{self, Kvm, PAGESIZE, Uvm},
 };
 
-
 // Holds current execution state
 #[derive(Default)]
 pub struct Cpu {
@@ -20,6 +19,15 @@ pub struct Cpu {
 }
 
 impl Cpu {
+    pub const fn new() -> Self {
+        Self {
+            current: core::ptr::null_mut(),
+            context: Context::zero(),
+            interrupt_off_stack: 0,
+            interrupt_prev_state: false,
+        }
+    }
+
     pub fn push_interrupt_off(&mut self) {
         let old = interrupt_read();
         unsafe { interrupt_off() };
@@ -42,13 +50,12 @@ impl Cpu {
 #[derive(Default)]
 pub struct Kernel {
     pub kvm: Option<virtmemory::Kvm>,
-    pub cpus: Cpu,
     pub process_table: Vec<Process>,
     pub pid: usize,
 }
 
 impl Kernel {
-    pub fn init (&mut self) -> Result<(),()> {
+    pub fn init(&mut self) -> Result<(), ()> {
         self.kvm = Some(Kvm::init()?);
         Ok(())
     }
