@@ -9,6 +9,7 @@ mod kernel;
 mod process;
 mod trap;
 pub mod virtmemory;
+pub mod lock;
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -93,7 +94,7 @@ pub extern "C" fn main() -> ! {
     init_trap();
     let mut kernel = Box::new(Kernel::default());
 
-    // KERNEL.call_once(|| spin::Mutex::new(Kernel::default()));
+    // KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
 
     print!("Hello world\n");
 
