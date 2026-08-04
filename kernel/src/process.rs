@@ -6,20 +6,11 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    FRAME_ALLOCATOR,
-    allocator::FrameAllocator,
-    csr::{SSTATUS_SPIE, SSTATUS_SPP},
-    kernel::Kernel,
-    print,
-    process::trapframe::Trapframe,
-    read_csr,
-    trap::{
+    FRAME_ALLOCATOR, KERNEL, allocator::FrameAllocator, csr::{SSTATUS_SPIE, SSTATUS_SPP}, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
         interrupt_off, interrupt_on,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
-    },
-    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
-    write_csr,
+    }, virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont}, write_csr
 };
 
 // NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
@@ -243,7 +234,7 @@ unsafe extern "C" fn switch(c1: &mut Context, c2: &mut Context) {
     );
 }
 
-pub fn scheduler(mut kernel: Kernel) -> ! {
+pub fn scheduler() -> ! {
     loop {
         print!("scheduler\n");
         unsafe {
@@ -251,7 +242,7 @@ pub fn scheduler(mut kernel: Kernel) -> ! {
             interrupt_off();
         }
 
-        for proc in kernel.process_table.iter_mut() {
+        for proc in KERNEL.get().unwrap().lock().process_table.iter_mut() {
             if proc.state == ProcState::Runnable {
                 proc.state = ProcState::Running;
                 print!("Swiching to process {:?}\n", proc.pid);

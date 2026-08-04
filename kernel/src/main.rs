@@ -6,14 +6,15 @@
 pub mod allocator;
 mod csr;
 mod kernel;
+pub mod lock;
 mod process;
 mod trap;
 pub mod virtmemory;
-pub mod lock;
 
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::{format, vec};
+use spin::Once;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -33,7 +34,7 @@ static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {}
 
 static mut CPU: Cpu = Cpu::new();
 
-// static KERNEL: Once<Mutex<Kernel>> = Once::new();
+static KERNEL: Once<lock::IntMutex<Kernel>> = Once::new();
 
 global_asm!(
     "
@@ -92,16 +93,22 @@ pub extern "C" fn main() -> ! {
     }
 
     init_trap();
-    let mut kernel = Box::new(Kernel::default());
-
-    // KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
+    KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
 
     print!("Hello world\n");
 
-    kernel.init().expect("Kernel init fail");
+    KERNEL
+        .get()
+        .unwrap()
+        .lock()
+        .init()
+        .expect("Kernel init fail");
 
-    kernel.initproc(4).unwrap();
-    kernel
+    KERNEL.get().unwrap().lock().initproc(4).unwrap();
+    KERNEL
+        .get()
+        .unwrap()
+        .lock()
         .kvm
         .as_mut()
         .expect("KVM not initialized")
@@ -109,15 +116,19 @@ pub extern "C" fn main() -> ! {
     print!("Virt started\n");
 
     // Start init
-    let user_p0 = kernel.allocproc().unwrap();
-    user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
-    user_p0.state = process::ProcState::Runnable;
+    {
+        let mut kernel = KERNEL.get().unwrap().lock();
 
-    let user_p1 = kernel.allocproc().unwrap();
-    user_p1.kexec(USER_BYTES, vec!["17"]).unwrap();
-    user_p1.state = process::ProcState::Runnable;
+        let user_p0 = kernel.allocproc().unwrap();
+        user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
+        user_p0.state = process::ProcState::Runnable;
 
-    process::scheduler(*kernel);
+        let user_p1 = kernel.allocproc().unwrap();
+        user_p1.kexec(USER_BYTES, vec!["17"]).unwrap();
+        user_p1.state = process::ProcState::Runnable;
+    }
+
+    process::scheduler();
 }
 
 #[panic_handler]

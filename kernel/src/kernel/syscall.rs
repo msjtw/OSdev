@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{process::Process, uart_print, virtmemory::copy_in_cont};
+use crate::{KERNEL, process::Process, uart_print, virtmemory::copy_in_cont};
 use alloc::string::String;
 
 // System call numbers
@@ -70,8 +70,9 @@ fn sys_write(proc: &mut Process) {
     }
 }
 
-fn sys_fork(_proc: &mut Process) {
-    // proc.kfork(kernel).unwrap();
+fn sys_fork(proc: &mut Process) {
+    let mut kernel = KERNEL.get().unwrap().lock();
+    proc.kfork(&mut kernel).unwrap();
 }
 
 fn sys_exec(_proc: &mut Process) {}
