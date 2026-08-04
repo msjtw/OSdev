@@ -12,7 +12,6 @@ mod trap;
 pub mod virtmemory;
 
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::{format, vec};
 use spin::Once;
 
@@ -33,7 +32,6 @@ static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::
 static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {};
 
 static mut CPU: Cpu = Cpu::new();
-
 static KERNEL: Once<lock::IntMutex<Kernel>> = Once::new();
 
 global_asm!(
@@ -94,31 +92,22 @@ pub extern "C" fn main() -> ! {
 
     init_trap();
     KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
-
-    print!("Hello world\n");
-
-    KERNEL
-        .get()
-        .unwrap()
-        .lock()
-        .init()
-        .expect("Kernel init fail");
-
-    KERNEL.get().unwrap().lock().initproc(4).unwrap();
-    KERNEL
-        .get()
-        .unwrap()
-        .lock()
-        .kvm
-        .as_mut()
-        .expect("KVM not initialized")
-        .start_kvm();
-    print!("Virt started\n");
-
-    // Start init
     {
         let mut kernel = KERNEL.get().unwrap().lock();
 
+        print!("Hello world\n");
+
+        kernel.init().expect("Kernel init fail");
+
+        kernel.initproc(4).unwrap();
+        kernel
+            .kvm
+            .as_mut()
+            .expect("KVM not initialized")
+            .start_kvm();
+        print!("Virt started\n");
+
+        // Start init
         let user_p0 = kernel.allocproc().unwrap();
         user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
         user_p0.state = process::ProcState::Runnable;
