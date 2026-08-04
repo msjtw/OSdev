@@ -76,10 +76,10 @@ impl Kernel {
 
     pub fn allocproc(&mut self) -> Option<&mut Process> {
         for p in &mut self.process_table {
-            if p.state == ProcState::UNUSED {
+            if p.state == ProcState::Unused {
                 p.pid = Some(self.pid);
                 self.pid += 1;
-                p.state = ProcState::USED;
+                p.state = ProcState::Used;
                 p.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
 
                 // get empty user page table

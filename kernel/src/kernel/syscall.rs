@@ -33,7 +33,7 @@ pub const SYS_CLOSE: usize = 21;
 // all in user registers in trapframe
 
 pub fn syscall(proc: &mut Process) {
-    let sys_num = proc.trapframe.a7 as usize;
+    let sys_num = proc.trapframe.a7;
     // let args: [u32; 6];
 
     // print!("call num: {sys_num}\n")
@@ -52,15 +52,15 @@ fn sys_write(proc: &mut Process) {
     unsafe {
         crate::CPU.push_interrupt_off();
     }
-    let fd = proc.trapframe.a0 as usize;
-    let addr = proc.trapframe.a1 as usize;
-    let size = proc.trapframe.a2 as usize;
+    let fd = proc.trapframe.a0;
+    let addr = proc.trapframe.a1;
+    let size = proc.trapframe.a2;
 
     if fd != 1 {
         panic!("Write to fd {fd}");
     }
 
-    let bytes = copy_in_cont(&proc.pagetable, addr, size).unwrap();
+    let bytes = copy_in_cont(&mut proc.pagetable, addr, size).unwrap();
     let msg = String::from_utf8(bytes).unwrap();
 
     uart_print(&msg);
@@ -74,6 +74,4 @@ fn sys_fork(_proc: &mut Process) {
     // proc.kfork(kernel).unwrap();
 }
 
-fn sys_exec(_proc: &mut Process) {
-
-}
+fn sys_exec(_proc: &mut Process) {}

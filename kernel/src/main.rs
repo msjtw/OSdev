@@ -110,13 +110,13 @@ pub extern "C" fn main() -> ! {
     // Start init
     let user_p0 = kernel.allocproc().unwrap();
     user_p0.kexec(USER_BYTES, vec!["10"]).unwrap();
-    user_p0.state = process::ProcState::RUNNABLE;
+    user_p0.state = process::ProcState::Runnable;
 
     let user_p1 = kernel.allocproc().unwrap();
     user_p1.kexec(USER_BYTES, vec!["17"]).unwrap();
-    user_p1.state = process::ProcState::RUNNABLE;
+    user_p1.state = process::ProcState::Runnable;
 
-    process::scheduler(kernel);
+    process::scheduler(*kernel);
 }
 
 #[panic_handler]

@@ -39,12 +39,12 @@ macro_rules! KSTACK {
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ProcState {
     #[default]
-    UNUSED,
-    USED,
-    SLEEPING,
-    RUNNABLE,
-    RUNNING,
-    ZOMBIE,
+    Unused,
+    Used,
+    Sleeping,
+    Runnable,
+    Running,
+    Zombie,
 }
 
 #[repr(C)]
@@ -88,7 +88,7 @@ impl Context {
     }
 }
 
-// processes are initialized on boot (state: UNUSED and kstack)
+// processes are initialized on boot (state: Unused and kstack)
 // When new process is created pid, state and pagetable are assigned.
 //
 pub struct Process {
@@ -118,7 +118,7 @@ impl Process {
 
     // NOTE: because yield is a keyword
     pub fn yeld(&mut self) {
-        self.state = ProcState::RUNNABLE;
+        self.state = ProcState::Runnable;
         unsafe { self.sched() };
     }
 
@@ -147,7 +147,7 @@ impl Process {
         // NOTE: not sure if it's ok
         child_proc.parent = self.pid;
 
-        child_proc.state = ProcState::RUNNABLE;
+        child_proc.state = ProcState::Runnable;
 
         child_proc.pid.ok_or(())
     }
@@ -164,8 +164,8 @@ impl Process {
         // alloc user stack
         pagetree.grow(PAGESIZE, PTE_W | PTE_R).unwrap();
 
-        let mut sp = pagetree.end() as usize;
-        let stack_base = sp - PAGESIZE as usize;
+        let mut sp = pagetree.end() ;
+        let stack_base = sp - PAGESIZE ;
 
         // TODO: add name as argv[0]
 
@@ -177,7 +177,7 @@ impl Process {
             if sp < stack_base {
                 return Err(());
             }
-            copy_out_cont(&pagetree, sp, arg.as_bytes())?;
+            copy_out_cont(&mut pagetree, sp, arg.as_bytes())?;
             // save addr of each arg
             ustack.push(sp);
         }
@@ -188,7 +188,7 @@ impl Process {
         if sp < stack_base {
             return Err(());
         }
-        copy_out_cont(&pagetree, sp, &ustack)?;
+        copy_out_cont(&mut pagetree, sp, &ustack)?;
 
         // prepare arguments on stack
         self.trapframe.a0 = argv.len();
@@ -243,7 +243,7 @@ unsafe extern "C" fn switch(c1: &mut Context, c2: &mut Context) {
     );
 }
 
-pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
+pub fn scheduler(mut kernel: Kernel) -> ! {
     loop {
         print!("scheduler\n");
         unsafe {
@@ -252,8 +252,8 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
         }
 
         for proc in kernel.process_table.iter_mut() {
-            if proc.state == ProcState::RUNNABLE {
-                proc.state = ProcState::RUNNING;
+            if proc.state == ProcState::Runnable {
+                proc.state = ProcState::Running;
                 print!("Swiching to process {:?}\n", proc.pid);
                 print!("stack pointer 0x{:x}\n", proc.trapframe.sp);
                 unsafe {

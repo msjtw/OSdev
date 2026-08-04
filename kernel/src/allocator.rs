@@ -69,7 +69,7 @@ unsafe impl Allocator for FrameAllocator {
         &self,
         layout: core::alloc::Layout,
     ) -> Result<core::ptr::NonNull<[u8]>, alloc::alloc::AllocError> {
-        if layout.size() > PAGESIZE as usize {
+        if layout.size() > PAGESIZE {
             return Err(AllocError);
         }
         let frame_ptr = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) };
