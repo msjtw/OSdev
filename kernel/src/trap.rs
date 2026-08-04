@@ -134,8 +134,8 @@ extern "C" fn kerneltrap() {
         }
 
         let mut pid = None;
-        if !(*CPU).current.is_null() {
-            pid = (*(*CPU).current).pid;
+        if !(crate::CPU).current.is_null() {
+            pid = (*(crate::CPU).current).pid;
         }
 
         print!(
@@ -153,8 +153,8 @@ extern "C" fn kerneltrap() {
                     time + 1000000
                 );
                 write_csr!(stimecmp, time + 1000000);
-                if !(*CPU).current.is_null() {
-                    (*(*CPU).current).yeld();
+                if !(crate::CPU).current.is_null() {
+                    (*(crate::CPU).current).yeld();
                 }
             }
             _ => panic!(),
@@ -167,13 +167,12 @@ extern "C" fn kerneltrap() {
 
 pub extern "C" fn usertrap() -> u32 {
     let proc;
-    let kernel;
     unsafe {
         let sepc = read_csr!(sepc) as u32;
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
-        proc = &mut (*(*CPU).current);
-        kernel = &mut *(*CPU);
+        proc = &mut (*(crate::CPU).current);
+        // kernel = &mut crate::CPU;
 
         if (sstatus & SSTATUS_SPP as usize) != 0 {
             panic!("kerneltrap: not from user mode");
@@ -210,9 +209,9 @@ pub extern "C" fn usertrap() -> u32 {
                     time + 1000000
                 );
                 write_csr!(stimecmp, time + 1000000);
-                if !(*CPU).current.is_null() {
+                if !(crate::CPU).current.is_null() {
                     // NOTE: I dont think it's possible for it to be null
-                    (*(*CPU).current).yeld();
+                    (*(crate::CPU).current).yeld();
                 }
             }
             _ => panic!(),

@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(allocator_api)]
+#![allow(static_mut_refs)]
 
 pub mod allocator;
 mod csr;
@@ -12,7 +13,7 @@ pub mod virtmemory;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::{format, vec};
-use spin::Once;
+use spin::{Once};
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -32,7 +33,7 @@ static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {}
 
 static mut CPU: Cpu = Cpu::new();
 
-static KERNEL: Once<spin::Mutex<Kernel>> = Once::new();
+
 
 global_asm!(
     "

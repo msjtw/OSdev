@@ -41,23 +41,23 @@ impl<const ORDER: usize> Deref for LockedHeap<ORDER> {
 unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         unsafe {
-            (*crate::CPU).push_interrupt_off();
+            crate::CPU.push_interrupt_off();
             let res = self
                 .0
                 .lock()
                 .alloc(layout)
                 .ok()
                 .map_or(core::ptr::null_mut(), |allocation| allocation.as_ptr());
-            (*crate::CPU).pop_interrupt_off();
-            res
+           crate::CPU.pop_interrupt_off();
+           res
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
-            (*crate::CPU).push_interrupt_off();
+            crate::CPU.push_interrupt_off();
             self.0.lock().dealloc(NonNull::new_unchecked(ptr), layout);
-            (*crate::CPU).pop_interrupt_off();
+            crate::CPU.pop_interrupt_off();
         }
     }
 }

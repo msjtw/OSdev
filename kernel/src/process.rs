@@ -94,7 +94,7 @@ impl Context {
 pub struct Process {
     pub pid: Option<usize>,
     pub state: ProcState,
-    pub kstack: u32,                        // virt addr of kernel stack page
+    pub kstack: u32, // virt addr of kernel stack page
     pub parent: Option<usize>,
     pub pagetable: virtmemory::Uvm, // user virt pagetable
     pub context: Context,
@@ -124,19 +124,19 @@ impl Process {
 
     unsafe fn sched(&mut self) {
         unsafe {
-            let interrupt_prev_state = (*CPU).interrupt_prev_state;
-            switch(&mut self.context, &mut (*CPU).context);
-            (*CPU).interrupt_prev_state = interrupt_prev_state;
+            let interrupt_prev_state = (crate::CPU).interrupt_prev_state;
+            switch(&mut self.context, &mut (crate::CPU).context);
+            (crate::CPU).interrupt_prev_state = interrupt_prev_state;
         }
     }
 
-    pub fn kfork(&mut self, kernel: &mut Kernel) -> Result<usize, ()>{
+    pub fn kfork(&mut self, kernel: &mut Kernel) -> Result<usize, ()> {
         let child_proc = kernel.allocproc().ok_or(())?;
 
         let mut uvm = self.pagetable.clone();
         uvm.init_proc(&child_proc)?;
         child_proc.pagetable = uvm;
-        
+
         child_proc.trapframe = Box::new_in(*self.trapframe.clone(), &FRAME_ALLOCATOR);
 
         // return 0 in child
@@ -257,9 +257,9 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
                 print!("Swiching to process {:?}\n", proc.pid);
                 print!("stack pointer 0x{:x}\n", proc.trapframe.sp);
                 unsafe {
-                    (*CPU).current = proc as *mut Process;
-                    switch(&mut (*CPU).context, &mut proc.context);
-                    (*CPU).current = ptr::null_mut();
+                    crate::CPU.current = proc as *mut Process;
+                    switch(&mut crate::CPU.context, &mut proc.context);
+                    crate::CPU.current = ptr::null_mut();
                 }
             }
         }
@@ -271,7 +271,7 @@ pub fn forkret() {
     // TODO: exec first proc (init) here (or not)
     let mut proc;
     unsafe {
-        proc = &mut (*(*CPU).current);
+        proc = &mut (*crate::CPU.current);
     }
 
     prepare_return(&mut proc);

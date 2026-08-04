@@ -50,7 +50,7 @@ pub fn syscall(proc: &mut Process) {
 
 fn sys_write(proc: &mut Process) {
     unsafe {
-        (*crate::CPU).push_interrupt_off();
+        crate::CPU.push_interrupt_off();
     }
     let fd = proc.trapframe.a0 as usize;
     let addr = proc.trapframe.a1 as usize;
@@ -66,12 +66,12 @@ fn sys_write(proc: &mut Process) {
     uart_print(&msg);
     proc.trapframe.a0 = 0;
     unsafe {
-        (*crate::CPU).pop_interrupt_off();
+        crate::CPU.pop_interrupt_off();
     }
 }
 
 fn sys_fork(proc: &mut Process) {
-    proc.kfork(kernel).unwrap();
+    // proc.kfork(kernel).unwrap();
 }
 
 fn sys_exec(proc: &mut Process) {
