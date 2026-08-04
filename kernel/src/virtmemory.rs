@@ -1,7 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
-    ptr::copy_nonoverlapping,
+    ptr::{NonNull, copy_nonoverlapping},
 };
 
 use alloc::{alloc::Allocator, vec::Vec};
@@ -14,43 +14,42 @@ use crate::{
 };
 
 unsafe extern "C" {
-    pub static etext: u32;
-    pub static ekernel: u32;
-    pub static _STACK_PTR: u32;
+    pub static etext: usize;
+    pub static ekernel: usize;
+    pub static _STACK_PTR: usize;
 }
 
-pub const PAGESIZE: u32 = 4 * 1024;
-const RAMSIZE: u32 = 62 * 1024 * 1024;
-const RAMSTART: u32 = 0x80200000;
-pub const RAMEND: u32 = RAMSTART + RAMSIZE;
+pub const PAGESIZE: usize = 4 * 1024;
+const RAMSIZE: usize = 62 * 1024 * 1024;
+const RAMSTART: usize = 0x80200000;
+pub const RAMEND: usize = RAMSTART + RAMSIZE;
 
-const KERNEL_START: u32 = 0x80200000;
-pub const USER_START: u32 = 0x10000;
-pub const UART: u32 = 0x10000000;
+const KERNEL_START: usize = 0x80200000;
+pub const USER_START: usize = 0x10000;
+pub const UART: usize = 0x10000000;
 
 // NOTE: I need address one above last virutal, but it wont fit in u32 (it is 33 bit).
 // So the last page is discarded and VIRT_END is set to first address of last page.
 // 0xffffff is last address of last page, -PAGESIZE is last of one to last page, +1 is first of last
-pub const VIRT_END: u32 = 0xffffffff - PAGESIZE + 1;
+pub const VIRT_END: usize = 0xffffffff - PAGESIZE + 1;
 // pub const VIRT_END: u32 = u32::MAX;
-pub const TRAMPOLINE: u32 = VIRT_END - PAGESIZE;
-pub const TRAPFRAME: u32 = TRAMPOLINE - PAGESIZE;
+pub const TRAMPOLINE: usize = VIRT_END - PAGESIZE;
+pub const TRAPFRAME: usize = TRAMPOLINE - PAGESIZE;
 
-pub const PAGE_LAYOUT: Layout =
-    unsafe { Layout::from_size_align_unchecked(PAGESIZE as usize, PAGESIZE as usize) };
+pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGESIZE, PAGESIZE) };
 
-pub const PTE_R: u32 = 0b10;
-pub const PTE_W: u32 = 0b100;
-pub const PTE_X: u32 = 0b1000;
-pub const PTE_U: u32 = 0b10000;
+pub const PTE_R: usize = 0b10;
+pub const PTE_W: usize = 0b100;
+pub const PTE_X: usize = 0b1000;
+pub const PTE_U: usize = 0b10000;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 struct PTE {
-    pub pa: u32,
-    pub ppn: u32,
-    pub ppn1: u32,
-    pub ppn0: u32,
+    pub pa: usize,
+    pub ppn: usize,
+    pub ppn1: usize,
+    pub ppn0: usize,
     pub rsw: u8,
     pub d: bool,
     pub a: bool,
@@ -60,11 +59,11 @@ struct PTE {
     pub w: bool,
     pub r: bool,
     pub v: bool,
-    pub perm: u32,
+    pub perm: usize,
 }
 
-impl From<u32> for PTE {
-    fn from(pte: u32) -> Self {
+impl From<usize> for PTE {
+    fn from(pte: usize) -> Self {
         PTE {
             pa: (pte & 0b11111111111111111111110000000000) << 2,
             ppn: (pte & 0b11111111111111111111110000000000) >> 10,
@@ -84,26 +83,25 @@ impl From<u32> for PTE {
     }
 }
 
-impl Into<u32> for PTE {
-    fn into(self) -> u32 {
-        let res = (self.ppn as u32) << 10
-            | (self.rsw as u32) << 8
-            | (self.d as u32) << 7
-            | (self.a as u32) << 6
-            | (self.g as u32) << 5
-            | (self.u as u32) << 4
-            | (self.x as u32) << 3
-            | (self.w as u32) << 2
-            | (self.r as u32) << 1
-            | (self.v as u32);
-        res
+impl From<PTE> for usize {
+    fn from(val: PTE) -> Self {
+        val.ppn << 10
+            | (val.rsw as usize) << 8
+            | (val.d as usize) << 7
+            | (val.a as usize) << 6
+            | (val.g as usize) << 5
+            | (val.u as usize) << 4
+            | (val.x as usize) << 3
+            | (val.w as usize) << 2
+            | (val.r as usize) << 1
+            | (val.v as usize)
     }
 }
 
 impl PTE {
     #[inline]
     // get pte from physical address without permissions
-    fn from_addr(pa: u32) -> PTE {
+    fn from_addr(pa: usize) -> PTE {
         let mask = (1 << 12) - 1;
         let pte = (pa & !mask) >> 2;
         PTE::from(pte)
@@ -122,16 +120,16 @@ struct Perm {
     x: bool,
 }
 
-impl Into<u32> for Perm {
-    fn into(self) -> u32 {
+impl From<Perm> for usize {
+    fn from(val: Perm) -> Self {
         let mut res = 0;
-        if self.r {
+        if val.r {
             res |= 0b10;
         }
-        if self.w {
+        if val.w {
             res |= 0b100;
         }
-        if self.x {
+        if val.x {
             res |= 0b1000;
         }
         res
@@ -140,30 +138,30 @@ impl Into<u32> for Perm {
 
 #[derive(Debug)]
 pub struct SATP {
-    mode: u32,
-    asid: u32,
-    ppn: u32,
+    mode: usize,
+    asid: usize,
+    ppn: usize,
 }
 
-impl Into<u32> for SATP {
-    fn into(self) -> u32 {
-        let mut satp: u32 = 0;
-        satp |= self.mode << 31;
-        satp |= self.asid << 22;
-        satp |= self.ppn;
+impl From<SATP> for usize {
+    fn from(val: SATP) -> Self {
+        let mut satp: usize = 0;
+        satp |= val.mode << 31;
+        satp |= val.asid << 22;
+        satp |= val.ppn;
         satp
     }
 }
 
 #[derive(Debug)]
 struct VA {
-    vpn1: u32,
-    vpn0: u32,
-    offset: u32,
+    vpn1: usize,
+    vpn0: usize,
+    offset: usize,
 }
 
 impl VA {
-    fn vpn(&self, level: u32) -> Option<u32> {
+    fn vpn(&self, level: usize) -> Option<usize> {
         match level {
             0 => Some(self.vpn0),
             1 => Some(self.vpn1),
@@ -172,8 +170,8 @@ impl VA {
     }
 }
 
-impl From<u32> for VA {
-    fn from(val: u32) -> Self {
+impl From<usize> for VA {
+    fn from(val: usize) -> Self {
         VA {
             vpn1: (val & 0b11111111110000000000000000000000) >> 22,
             vpn0: (val & 0b00000000001111111111000000000000) >> 12,
@@ -184,22 +182,24 @@ impl From<u32> for VA {
 
 #[derive(Debug)]
 struct PA {
-    ppn1: u32,
-    ppn0: u32,
-    offset: u32,
+    ppn1: usize,
+    ppn0: usize,
+    offset: usize,
 }
 
-impl Into<u32> for PA {
-    fn into(self) -> u32 {
-        let ppn1 = self.ppn1 << 22;
-        let ppn0 = self.ppn0 << 12;
-        ppn1 | ppn0 | self.offset
+impl From<PA> for usize {
+    fn from(val: PA) -> Self {
+        let ppn1 = val.ppn1 << 22;
+        let ppn0 = val.ppn0 << 12;
+        ppn1 | ppn0 | val.offset
     }
 }
 
 pub struct Kvm {
-    pagetree: *mut u32,
+    pagetree: NonNull<usize>,
 }
+
+unsafe impl Send for Kvm {}
 
 impl Kvm {
     // NOTE: Top of kernel address space is:
@@ -209,20 +209,25 @@ impl Kvm {
     // guard
     // ...
 
-    pub fn init() -> Result<Kvm, ()> {
-        let trampoline = unsafe { &_trampoline as *const u32 as u32 };
+    pub fn new() -> Kvm {
+        let ptr = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut usize };
 
-        let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let kvm = Kvm {
-            pagetree: root_page,
-        };
+        let pagetree = NonNull::new(ptr).expect("failed to allocate root page table");
+
+        Self { pagetree }
+    }
+
+    pub fn init() -> Result<Kvm, ()> {
+        let trampoline = unsafe { &_trampoline as *const usize as usize };
+
+        let kvm = Kvm::new();
         // map all sections
 
         // uart
         map(kvm.pagetree, UART, UART, PAGESIZE, PTE_R | PTE_W)?;
 
         // kernel text
-        let end_text = unsafe { &etext } as *const u32 as u32;
+        let end_text = unsafe { &etext } as *const usize as usize;
         map(
             kvm.pagetree,
             KERNEL_START,
@@ -253,10 +258,10 @@ impl Kvm {
     }
 
     // maps and allocates kernel stacks
-    pub fn alloc_kstack(&mut self, va: u32) {
+    pub fn alloc_kstack(&mut self, va: usize) {
         for i in 0..crate::process::KERNEL_STACK_PAGES {
             let kstack_page =
-                FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as u32;
+                FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as usize;
             map(
                 self.pagetree,
                 va + i * PAGESIZE,
@@ -269,13 +274,13 @@ impl Kvm {
     }
 
     pub fn start_kvm(&self) {
-        let ppn = (self.pagetree as u32) >> 12;
+        let ppn = (self.pagetree.as_ptr() as usize) >> 12;
         let satp = SATP {
             mode: 1,
             asid: 0,
             ppn,
         };
-        let satp: u32 = satp.into();
+        let satp: usize = satp.into();
         unsafe {
             asm!("sfence.vma zero, zero");
             write_csr!(satp, satp);
@@ -288,16 +293,16 @@ impl Kvm {
 }
 
 pub struct Uvm {
-    begin: u32,
-    size: u32,
-    pagetree: *mut u32,
+    begin: usize,
+    size: usize,
+    pagetree: NonNull<usize>,
 }
 
 impl Clone for Uvm {
     fn clone(&self) -> Self {
         let vm = Uvm::new().unwrap();
 
-        for addr in (USER_START..self.end()).step_by(PAGESIZE as usize) {
+        for addr in (USER_START..self.end()).step_by(PAGESIZE) {
             let pte = unsafe { walk(self.pagetree, addr as usize, false).unwrap().read() };
             let pte = PTE::from(pte);
             if !pte.v {
@@ -305,9 +310,9 @@ impl Clone for Uvm {
             }
             let from = pte.pa as *const u8;
             let to = FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8;
-            unsafe { copy_nonoverlapping(from, to, PAGESIZE as usize) };
+            unsafe { copy_nonoverlapping(from, to, PAGESIZE) };
 
-            map(vm.pagetree, addr, to as u32, PAGESIZE, pte.perm).unwrap();
+            map(vm.pagetree, addr, to as usize, PAGESIZE, pte.perm).unwrap();
         }
 
         vm
@@ -317,21 +322,22 @@ impl Clone for Uvm {
 // The address space is continuous and starts at virt 0x80000000
 impl Uvm {
     pub fn new() -> Result<Uvm, ()> {
-        let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
+        let root_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut usize };
+        let pagetree = NonNull::new(root_page).expect("failed to allocate root page table");
         let uvm = Uvm {
             begin: USER_START,
             size: 0,
-            pagetree: root_page,
+            pagetree,
         };
         Ok(uvm)
     }
 
     pub fn get_satp(&self) -> SATP {
-        let ppn = (self.pagetree as u32) >> 12;
+        let ppn = (self.pagetree.as_ptr() as usize) >> 12;
         SATP {
             mode: 1,
             asid: 0,
-            ppn: ppn,
+            ppn,
         }
     }
 
@@ -339,35 +345,29 @@ impl Uvm {
         // FIXME: implement free
     }
 
-    pub fn end(&self) -> u32 {
+    pub fn end(&self) -> usize {
         self.begin + self.size
     }
 
-    pub fn grow(&mut self, size: u32, perm: u32) -> Result<(), ()> {
+    pub fn grow(&mut self, size: usize, perm: usize) -> Result<(), ()> {
         self.alloc(self.size + size, perm)
     }
 
     // grow new pages to size
     // it creates virt address space from USERBASE to size
-    pub fn alloc(&mut self, size: u32, perm: u32) -> Result<(), ()> {
+    pub fn alloc(&mut self, size: usize, perm: usize) -> Result<(), ()> {
         while self.size < size {
-            let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-            map(
-                self.pagetree,
-                self.end(),
-                page as u32,
-                PAGESIZE,
-                perm | PTE_U,
-            )?;
+            let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as usize };
+            map(self.pagetree, self.end(), page, PAGESIZE, perm | PTE_U)?;
             // NOTE: need to free memory on fail
-            self.size += PAGESIZE as u32
+            self.size += PAGESIZE
         }
         Ok(())
     }
 
     // shrink virt address space to size
-    pub fn dealloc(&mut self, size: u32) -> Result<(), ()> {
-        if size % PAGESIZE as u32 != 0 {
+    pub fn dealloc(&mut self, size: usize) -> Result<(), ()> {
+        if !size.is_multiple_of(PAGESIZE) {
             return Err(());
         }
 
@@ -377,7 +377,7 @@ impl Uvm {
     }
 
     pub fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
-        let trampoline = unsafe { &_trampoline as *const u32 as u32 };
+        let trampoline = unsafe { &_trampoline as *const usize as usize };
         map(
             self.pagetree,
             TRAMPOLINE,
@@ -389,7 +389,7 @@ impl Uvm {
         map(
             self.pagetree,
             TRAPFRAME,
-            proc.trapframe.as_ref() as *const Trapframe as u32,
+            proc.trapframe.as_ref() as *const Trapframe as usize,
             PAGESIZE,
             PTE_R | PTE_W,
         )?;
@@ -399,9 +399,9 @@ impl Uvm {
 
     // copy img to self at va
     // memory needs to be preallocated  TODO: does it really? Why can't it be allocated here?
-    pub fn load(&mut self, mut va: u32, img: &[u8]) -> Result<(), ()> {
+    pub fn load(&mut self, mut va: usize, img: &[u8]) -> Result<(), ()> {
         // load is executed in kernel with kernel pagetree.
-        if va % PAGESIZE != 0 {
+        if !va.is_multiple_of(PAGESIZE) {
             return Err(());
         }
         for page in img.chunks(PAGESIZE as usize) {
@@ -425,18 +425,24 @@ impl Uvm {
 }
 
 // map virtual memory range to physical memory range
-fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result<(), ()> {
+fn map(
+    pagetree: NonNull<usize>,
+    virt: usize,
+    phys: usize,
+    size: usize,
+    perm: usize,
+) -> Result<(), ()> {
     // TODO: tests
     // - size and virt addr aligned on page
     // - size > 0 and end < RAMEND
 
-    if phys % PAGESIZE != 0 {
+    if !phys.is_multiple_of(PAGESIZE) {
         panic!("mapping to unalinged frame 0x{:08x}\n", phys);
     }
-    if virt % PAGESIZE != 0 {
+    if !virt.is_multiple_of(PAGESIZE) {
         panic!("mapping unalinged page 0x{:08x}\n", virt);
     }
-    if size % PAGESIZE != 0 {
+    if !size.is_multiple_of(PAGESIZE) {
         panic!("mapping not whole pages\n");
     }
 
@@ -447,9 +453,9 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
         let pte_addr = walk(pagetree, vaddr as usize, true).ok_or(())?;
         // NOTE: check for remap (I don't think it's possible)
 
-        let mut pte = PTE::from_addr(paddr as u32);
+        let mut pte = PTE::from_addr(paddr);
         pte.v = true;
-        let mut pte: u32 = pte.into(); // set permissions
+        let mut pte: usize = pte.into(); // set permissions
         pte |= perm;
         // print!("-> 0x{:x} 0x{:x}\n", paddr, PTE::from(pte).pa);
         unsafe { pte_addr.write(pte) };
@@ -462,8 +468,8 @@ fn map(pagetree: *mut u32, virt: u32, phys: u32, size: u32, perm: u32) -> Result
 
 // remove mappings from virt to virt+size
 // if free it will also free the mapped pages but not the internal tree pages
-fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()> {
-    if size % PAGESIZE != 0 {
+fn unmap(pagetree: NonNull<usize>, virt: usize, size: usize, free: bool) -> Result<(), ()> {
+    if !size.is_multiple_of(PAGESIZE) {
         return Err(());
     }
 
@@ -489,41 +495,41 @@ fn unmap(pagetree: *mut u32, virt: u32, size: u32, free: bool) -> Result<(), ()>
 
 // returns leaf pte addr for given virtual address
 // with support for megapages
-fn walk(pagetree: *mut u32, virt_a: usize, alloc: bool) -> Option<*mut u32> {
-    let va = VA::from(virt_a as u32);
+fn walk(pagetree: NonNull<usize>, virt_a: usize, alloc: bool) -> Option<NonNull<usize>> {
+    let va = VA::from(virt_a);
 
     let mut a = pagetree;
 
-    let index = va.vpn(1)?;
-    let pte_addr = a.wrapping_add(index as usize);
+    let index = va.vpn(1)? as usize;
+    let pte_addr = unsafe { a.as_ptr().add(index) };
     let pte_u32 = unsafe { pte_addr.read() };
 
     let pte = PTE::from(pte_u32);
 
     if pte.v {
-        a = (pte.ppn << 12) as *mut u32;
+        a = NonNull::new((pte.ppn << 12) as *mut usize)?;
     } else {
         if !alloc {
             return None;
         }
-        let new_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut u32 };
-        let mut new_pte = PTE::from_addr(new_page as u32);
+        let new_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut usize };
+        let mut new_pte = PTE::from_addr(new_page as usize);
         new_pte.v = true;
         unsafe { pte_addr.write(new_pte.into()) };
-        a = new_page;
+        a = NonNull::new(new_page)?;
     }
 
     let index = va.vpn(0)?;
-    let pte_addr = a.wrapping_add(index as usize);
+    let pte_addr = unsafe { a.add(index) };
 
     Some(pte_addr)
 }
 
 // return physical address for virual
-fn walkaddr(pagetree: *mut u32, virt_a: usize) -> Option<usize> {
+fn walkaddr(pagetree: NonNull<usize>, virt_a: usize) -> Option<usize> {
     let pte = unsafe { walk(pagetree, virt_a, false).ok_or(()).ok()?.read() };
     let pa = PTE::from(pte).pa as usize + (virt_a % PAGESIZE as usize);
-    Some(pa as usize)
+    Some(pa)
 }
 
 // copy from given address space INTO current

@@ -6,7 +6,7 @@ use crate::{
     FRAME_ALLOCATOR, KSTACK, print,
     process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe},
     trap::{interrupt_off, interrupt_on, interrupt_read},
-    virtmemory::{self, Kvm, PAGESIZE, Uvm},
+    virtmemory::{self, Kvm, PAGESIZE},
 };
 
 // Holds current execution state
@@ -61,8 +61,8 @@ impl Kernel {
     }
 
     // Creates n additional processes with trapframe and kernel stack
-    pub fn initproc(&mut self, n: u32) -> Result<(), ()> {
-        let nproc = self.process_table.len() as u32;
+    pub fn initproc(&mut self, n: usize) -> Result<(), ()> {
+        let nproc = self.process_table.len();
         let kvm = self.kvm.as_mut().ok_or(())?;
         for i in nproc..nproc + n {
             let proc = Process::new(i)?;
@@ -88,7 +88,7 @@ impl Kernel {
                 // p.pagetable = Some(pagetable);
 
                 p.context = Context::default();
-                p.context.ra = forkret as *const u32 as u32;
+                p.context.ra = forkret as *const () as usize;
                 p.context.sp = p.kstack + KERNEL_STACK_PAGES * PAGESIZE;
 
                 return Some(p);

@@ -70,10 +70,10 @@ fn sys_write(proc: &mut Process) {
     }
 }
 
-fn sys_fork(proc: &mut Process) {
+fn sys_fork(_proc: &mut Process) {
     // proc.kfork(kernel).unwrap();
 }
 
-fn sys_exec(proc: &mut Process) {
+fn sys_exec(_proc: &mut Process) {
 
 }

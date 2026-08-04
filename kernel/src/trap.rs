@@ -5,7 +5,7 @@ use core::arch::naked_asm;
 use alloc::format;
 
 use crate::{
-    CPU, csr::SSTATUS_SPP, kernel::syscall::syscall, print, process::prepare_return, read_csr,
+    csr::SSTATUS_SPP, kernel::syscall::syscall, print, process::prepare_return, read_csr,
     write_csr,
 };
 
@@ -165,10 +165,10 @@ extern "C" fn kerneltrap() {
     }
 }
 
-pub extern "C" fn usertrap() -> u32 {
+pub extern "C" fn usertrap() -> usize {
     let proc;
     unsafe {
-        let sepc = read_csr!(sepc) as u32;
+        let sepc = read_csr!(sepc);
         let sstatus = read_csr!(sstatus);
         let scause = read_csr!(scause);
         proc = &mut (*(crate::CPU).current);
@@ -219,5 +219,5 @@ pub extern "C" fn usertrap() -> u32 {
         prepare_return(proc);
     }
     let satp = proc.pagetable.get_satp();
-    return satp.into();
+    satp.into()
 }

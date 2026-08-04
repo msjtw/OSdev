@@ -1,7 +1,7 @@
 use core::arch::naked_asm;
 
 unsafe extern "C" {
-    pub static _trampoline: u32;
+    pub static _trampoline: usize;
 }
 
 use crate::virtmemory::TRAPFRAME;

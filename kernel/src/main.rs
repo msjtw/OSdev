@@ -13,11 +13,10 @@ pub mod virtmemory;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::{format, vec};
-use spin::{Once};
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
-use core::ptr::{null_mut, write_volatile};
+use core::ptr::write_volatile;
 
 use crate::kernel::{Cpu, Kernel};
 use crate::trap::init_trap;
@@ -33,7 +32,7 @@ static FRAME_ALLOCATOR: allocator::FrameAllocator = allocator::FrameAllocator {}
 
 static mut CPU: Cpu = Cpu::new();
 
-
+// static KERNEL: Once<Mutex<Kernel>> = Once::new();
 
 global_asm!(
     "
@@ -85,7 +84,7 @@ pub extern "C" fn main() -> ! {
 
     // Init physical memory allocator.
     unsafe {
-        let ekernel = &virtmemory::ekernel as *const u32 as usize;
+        let ekernel = &virtmemory::ekernel as *const usize as usize;
         HEAP_ALLOCATOR
             .lock()
             .init(ekernel, RAMEND as usize - ekernel);

@@ -6,7 +6,7 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    CPU, FRAME_ALLOCATOR,
+    FRAME_ALLOCATOR,
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     kernel::Kernel,
@@ -25,13 +25,13 @@ use crate::{
 // NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
 // Normaly (in c) 1 page stack for kernel is more than enough.
 // But this is rust and fmt (format!) allocates shitload on stack.
-pub const KERNEL_STACK_PAGES: u32 = 2;
+pub const KERNEL_STACK_PAGES: usize = 2;
 
 #[macro_export]
 macro_rules! KSTACK {
     ($n:expr) => {
         virtmemory::TRAMPOLINE
-            - (($n + 1) * virtmemory::PAGESIZE * (crate::process::KERNEL_STACK_PAGES + 1))
+            - (($n + 1) * virtmemory::PAGESIZE * ($crate::process::KERNEL_STACK_PAGES + 1))
             + virtmemory::PAGESIZE
     };
 }
@@ -50,21 +50,21 @@ pub enum ProcState {
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
 pub struct Context {
-    pub ra: u32,
-    pub sp: u32,
+    pub ra: usize,
+    pub sp: usize,
 
-    s0: u32,
-    s1: u32,
-    s2: u32,
-    s3: u32,
-    s4: u32,
-    s5: u32,
-    s6: u32,
-    s7: u32,
-    s8: u32,
-    s9: u32,
-    s10: u32,
-    s11: u32,
+    s0: usize,
+    s1: usize,
+    s2: usize,
+    s3: usize,
+    s4: usize,
+    s5: usize,
+    s6: usize,
+    s7: usize,
+    s8: usize,
+    s9: usize,
+    s10: usize,
+    s11: usize,
 }
 
 impl Context {
@@ -94,7 +94,7 @@ impl Context {
 pub struct Process {
     pub pid: Option<usize>,
     pub state: ProcState,
-    pub kstack: u32, // virt addr of kernel stack page
+    pub kstack: usize, // virt addr of kernel stack page
     pub parent: Option<usize>,
     pub pagetable: virtmemory::Uvm, // user virt pagetable
     pub context: Context,
@@ -102,7 +102,7 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(n: u32) -> Result<Process, ()> {
+    pub fn new(n: usize) -> Result<Process, ()> {
         Ok(Process {
             pid: None,
             state: ProcState::default(),
@@ -134,7 +134,7 @@ impl Process {
         let child_proc = kernel.allocproc().ok_or(())?;
 
         let mut uvm = self.pagetable.clone();
-        uvm.init_proc(&child_proc)?;
+        uvm.init_proc(child_proc)?;
         child_proc.pagetable = uvm;
 
         child_proc.trapframe = Box::new_in(*self.trapframe.clone(), &FRAME_ALLOCATOR);
@@ -142,7 +142,7 @@ impl Process {
         // return 0 in child
         child_proc.trapframe.a0 = 0;
         // and cpid in parent
-        self.trapframe.a0 = child_proc.pid.unwrap() as u32;
+        self.trapframe.a0 = child_proc.pid.unwrap();
 
         // NOTE: not sure if it's ok
         child_proc.parent = self.pid;
@@ -154,8 +154,8 @@ impl Process {
 
     pub fn kexec(&mut self, img: &[u8], argv: Vec<&str>) -> Result<(), ()> {
         let mut pagetree = Uvm::new()?;
-        pagetree.init_proc(&self)?;
-        pagetree.alloc(img.len() as u32, PTE_R | PTE_W | PTE_X)?;
+        pagetree.init_proc(self)?;
+        pagetree.alloc(img.len(), PTE_R | PTE_W | PTE_X)?;
         pagetree.load(USER_START, img)?;
 
         // alloc guardpage
@@ -191,12 +191,12 @@ impl Process {
         copy_out_cont(&pagetree, sp, &ustack)?;
 
         // prepare arguments on stack
-        self.trapframe.a0 = argv.len() as u32;
-        self.trapframe.a1 = sp as u32;
+        self.trapframe.a0 = argv.len();
+        self.trapframe.a1 = sp;
 
         // switch to new pagetree
         self.pagetable = pagetree;
-        self.trapframe.sp = sp as u32;
+        self.trapframe.sp = sp;
         // self.trapframe.epc = 0x100f;
         self.trapframe.epc = USER_START;
 
@@ -269,19 +269,19 @@ pub fn scheduler(mut kernel: Box<Kernel>) -> ! {
 // allocproc sets this as ra for new processes
 pub fn forkret() {
     // TODO: exec first proc (init) here (or not)
-    let mut proc;
+    let proc;
     unsafe {
         proc = &mut (*crate::CPU.current);
     }
 
-    prepare_return(&mut proc);
+    prepare_return(proc);
     let satp = proc.pagetable.get_satp().into();
     // NOTE: userret is in 2 places, in kernel text and also mapped into
     // high address in TRAMPOLINE, we need to call it through TRAMPOLINE address.
     let userret_addr = userret as *const () as usize;
-    let trampoline = unsafe { &_trampoline as *const u32 as usize };
+    let trampoline = unsafe { &_trampoline as *const usize as usize };
     let userret_off = userret_addr - trampoline;
-    let trampoline_userret: fn(u32) = unsafe { transmute(TRAMPOLINE as usize + userret_off) };
+    let trampoline_userret: fn(usize) = unsafe { transmute(TRAMPOLINE + userret_off) };
     trampoline_userret(satp);
 }
 
@@ -291,16 +291,16 @@ pub fn prepare_return(proc: &mut Process) {
         interrupt_off();
     }
 
-    let trampoline = unsafe { &_trampoline as *const u32 as u32 };
-    let uservec_addr = uservec as *const () as u32;
+    let trampoline = unsafe { &_trampoline as *const usize as usize };
+    let uservec_addr = uservec as *const () as usize;
     let uservec_off = uservec_addr - trampoline;
     unsafe { write_csr!(stvec, TRAMPOLINE + uservec_off) };
     // print!("uservec: 0x{:x}\n", TRAMPOLINE + uservec_off);
 
     // Needed for next trap into kernel
-    proc.trapframe.kernel_satp = unsafe { read_csr!(satp) as u32 };
+    proc.trapframe.kernel_satp = unsafe { read_csr!(satp) };
     proc.trapframe.kernel_sp = proc.kstack + KERNEL_STACK_PAGES * PAGESIZE;
-    proc.trapframe.trap_handler = usertrap as *const () as u32;
+    proc.trapframe.trap_handler = usertrap as *const () as usize;
     proc.trapframe.hartid = 0;
 
     // previous mode to user
