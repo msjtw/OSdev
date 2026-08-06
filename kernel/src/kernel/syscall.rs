@@ -1,7 +1,12 @@
 #![allow(dead_code)]
 
-use crate::{KERNEL, process::Process, uart_print, virtmemory::copy_in_cont};
-use alloc::string::String;
+mod sys_file;
+mod sys_proc;
+
+use crate::{
+    kernel::syscall::{sys_file::sys_write, sys_proc::*},
+    process::Process,
+};
 
 // System call numbers
 pub const SYS_FORK: usize = 1;
@@ -47,32 +52,3 @@ pub fn syscall(proc: &mut Process) {
         }
     }
 }
-
-fn sys_write(proc: &mut Process) {
-    unsafe {
-        crate::CPU.push_interrupt_off();
-    }
-    let fd = proc.trapframe.a0;
-    let addr = proc.trapframe.a1;
-    let size = proc.trapframe.a2;
-
-    if fd != 1 {
-        panic!("Write to fd {fd}");
-    }
-
-    let bytes = copy_in_cont(&mut proc.pagetable, addr, size).unwrap();
-    let msg = String::from_utf8(bytes).unwrap();
-
-    uart_print(&msg);
-    proc.trapframe.a0 = 0;
-    unsafe {
-        crate::CPU.pop_interrupt_off();
-    }
-}
-
-fn sys_fork(proc: &mut Process) {
-    let mut kernel = KERNEL.get().unwrap().lock();
-    proc.kfork(&mut kernel).unwrap();
-}
-
-fn sys_exec(_proc: &mut Process) {}

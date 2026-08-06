@@ -6,11 +6,20 @@ use core::{arch::naked_asm, mem::transmute, ptr};
 use alloc::boxed::Box;
 
 use crate::{
-    FRAME_ALLOCATOR, KERNEL, allocator::FrameAllocator, csr::{SSTATUS_SPIE, SSTATUS_SPP}, kernel::Kernel, print, process::trapframe::Trapframe, read_csr, trap::{
+    FRAME_ALLOCATOR, KERNEL,
+    allocator::FrameAllocator,
+    csr::{SSTATUS_SPIE, SSTATUS_SPP},
+    kernel::Kernel,
+    print,
+    process::trapframe::Trapframe,
+    read_csr,
+    trap::{
         interrupt_off, interrupt_on,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
-    }, virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont}, write_csr
+    },
+    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
+    write_csr,
 };
 
 // NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
@@ -155,8 +164,8 @@ impl Process {
         // alloc user stack
         pagetree.grow(PAGESIZE, PTE_W | PTE_R).unwrap();
 
-        let mut sp = pagetree.end() ;
-        let stack_base = sp - PAGESIZE ;
+        let mut sp = pagetree.end();
+        let stack_base = sp - PAGESIZE;
 
         // TODO: add name as argv[0]
 
@@ -260,10 +269,9 @@ pub fn scheduler() -> ! {
 // allocproc sets this as ra for new processes
 pub fn forkret() {
     // TODO: exec first proc (init) here (or not)
-    let proc;
-    unsafe {
-        proc = &mut (*crate::CPU.current);
-    }
+    let proc = unsafe {
+        &mut (*crate::CPU.current)
+    };
 
     prepare_return(proc);
     let satp = proc.pagetable.get_satp().into();

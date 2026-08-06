@@ -4,7 +4,7 @@ use core::{
     ptr::{NonNull, copy_nonoverlapping},
 };
 
-use alloc::{alloc::Allocator, vec::Vec};
+use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, HEAP_ALLOCATOR,
@@ -566,6 +566,7 @@ pub fn copy_in<T: Clone>(uv: &mut Uvm, addr: usize) -> Result<T, ()> {
     }
 }
 
+
 // Copy continuous bytes
 pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, len: usize) -> Result<Vec<T>, ()> {
     let mut bytes = Vec::new();
@@ -577,6 +578,12 @@ pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, len: usize) -> Result<Ve
     }
 
     Ok(bytes)
+}
+
+pub fn copy_in_str() -> Result<str, ()> {
+    let s = String::new();
+
+    Ok(s.as_str())
 }
 
 // copy from current OUT to user
