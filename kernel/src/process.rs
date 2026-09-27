@@ -10,23 +10,13 @@ use core::{
 use alloc::boxed::Box;
 
 use crate::{
-    FRAME_ALLOCATOR, KERNEL,
-    allocator::FrameAllocator,
-    csr::{SSTATUS_SPIE, SSTATUS_SPP},
-    debug,
-    lock::{IntMutex, IntMutexGuard},
-    print, println,
-    process::trapframe::Trapframe,
-    read_csr,
-    trap::{
+    FRAME_ALLOCATOR, KERNEL, allocator::FrameAllocator, csr::{SSTATUS_SPIE, SSTATUS_SPP}, debug, kprintln, lock::{IntMutex, IntMutexGuard}, print, println, process::trapframe::Trapframe, read_csr, trap::{
         interrupt_off, interrupt_on, interrupt_read,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
-    },
-    virtmemory::{
+    }, virtmemory::{
         self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out, copy_out_cont,
-    },
-    write_csr,
+    }, write_csr
 };
 
 // NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
@@ -237,6 +227,7 @@ impl Process {
         // switch to new pagetree
         self.pagetable = pagetree;
         self.trapframe.sp = sp;
+        kprintln!("sp: 0x{:x}", sp);
         // self.trapframe.epc = 0x100f;
         self.trapframe.epc = USER_START;
 

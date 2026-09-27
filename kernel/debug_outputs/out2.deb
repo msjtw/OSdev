@@ -68,7 +68,7 @@ kstack: 0xffff6000
 kstack: 0xffff3000
 sp: 0x12ff0
 scheduler: >TRAP None sepc=0x8021ad3c sstatus=0b10000000000000000110000100100000 scause=0x80000005 stval=0x0
->time: 0xef059, next timer on: 0x1e3299
+>time: 0xdfe40, next timer on: 0x1d4080
 switching to process Some(0)
 calculating 1-th prime: 
 scheduler: switching to process Some(1)
@@ -107,107 +107,11 @@ sp: 0x12ff0
 scheduler: switching to process Some(0)
 calculating 8-th prime: 
 scheduler: switching to process Some(8)
-sp: 0x12ff0
-8-th pr>TRAP Some(8) sepc=0x8021ad3c sstatus=0b10000000000000000110000100100000 scause=0x80000005 stval=0x0
->time: 0x1e5124, next timer on: 0x2d9364
+>TRAP Some(8) sepc=0x80230844 sstatus=0b10000000000000000110000100100000 scause=0x80000005 stval=0x0
+>time: 0x1d6083, next timer on: 0x2ca2c3
 yelding
-interrupt: false
-sched locks 0
-interrupt: false
-sched locks 1
-scheduler: switching to process Some(8)
-ime is: 19
-scheduler: switching to process Some(0)
-calculating 9-th prime: 
-scheduler: switching to process Some(9)
-sp: 0x12ff0
-9-th prime is: 23
-scheduler: switching to process Some(0)
-calculating 10-th prime: 
-scheduler: switching to process Some(10)
-sp: 0x12ff0
-10-th prime is: 29
-scheduler: switching to process Some(0)
-calculating 11-th prime: 
-scheduler: switching to process Some(11)
-sp: 0x12ff0
-11-th prime is: 31
-scheduler: switching to process Some(0)
-calculating 12-th prime: 
-scheduler: switching to process Some(12)
-sp: 0x12ff0
-12-th prime is: 37
-scheduler: switching to process Some(0)
-calculating 13-th prime: 
-scheduler: switching to process Some(13)
-sp: 0x12ff0
-13-th prime is: 41
-scheduler: switching to process Some(0)
-calculating 14-th prime: 
-scheduler: switching to process Some(14)
-sp: 0x12ff0
-14-th prime is: 43
-scheduler: switching to process Some(0)
-calculating 15-th prime: 
-scheduler: switching to process Some(15)
-sp: 0x12ff0
-15-th prime is: 47
-scheduler: switching to process Some(0)
-calculating 16-th prime: 
-scheduler: switching to process Some(16)
-sp: 0x12ff0
-16-th p>TRAP Some(16) sepc=0x8021ad3c sstatus=0b10000000000000000110000100100000 scause=0x80000005 stval=0x0
->time: 0x2db145, next timer on: 0x3cf385
-yelding
-interrupt: false
-sched locks 0
-interrupt: false
-sched locks 1
-scheduler: switching to process Some(16)
-rime is: 53
-scheduler: switching to process Some(0)
-calculating 17-th prime: 
-scheduler: switching to process Some(17)
-sp: 0x12ff0
-17-th prime is: 59
-scheduler: switching to process Some(0)
-calculating 18-th prime: 
-scheduler: switching to process Some(18)
-sp: 0x12ff0
-18-th prime is: 61
-scheduler: switching to process Some(0)
-calculating 19-th prime: 
-scheduler: switching to process Some(19)
-sp: 0x12ff0
-19-th prime is: 67
-scheduler: switching to process Some(0)
-calculating 20-th prime: 
-scheduler: switching to process Some(20)
-sp: 0x12ff0
-20-th prime is: 71
-scheduler: switching to process Some(0)
-calculating 21-th prime: 
-scheduler: switching to process Some(21)
-sp: 0x12ff0
-21-th prime is: 73
-scheduler: switching to process Some(0)
-calculating 22-th prime: 
-scheduler: switching to process Some(22)
-sp: 0x12ff0
-22-th prime is: 79
-scheduler: switching to process Some(0)
-calculating 23-th prime: 
-scheduler: switching to process Some(23)
-sp: 0x12ff0
-23-th prime is: 83
-scheduler: switching to process Some(0)
-calculating 24-th prime: 
-scheduler: switching to process Some(24)
->TRAP Some(24) sepc=0x80217c84 sstatus=0b10000000000000000110000100100000 scause=0x80000005 stval=0x0
->time: 0x3d0ed0, next timer on: 0x4c5110
-yelding
->TRAP Some(24) sepc=0x8021acbc sstatus=0b10000000000000000110000100000000 scause=0xf stval=0xffff800c
-Process { id: 1, pid: Some(24), state: Running, kstack: 4294938624, parent: Some(0), pagetable: Uvm { begin: 65536, size: 12288, pagetable: PageTable { root: 0x80266000 } }, context: Context { ra: 2149620856, sp: 4294946816, s0: 0, s1: 0, s2: 0, s3: 0, s4:
+>TRAP Some(8) sepc=0x8021ac9c sstatus=0b10000000000000000110000100000000 scause=0xf stval=0xffff8004
+Process { id: 1, pid: Some(8), state: Running, kstack: 4294938624, parent: Some(0), pagetable: Uvm { begin: 65536, size: 12288, pagetable: PageTable { root: 0x80267000 } }, context: Context { ra: 2149620856, sp: 4294946816, s0: 0, s1: 0, s2: 0, s3: 0, s4: 
 Something went wrong. PanicInfo { message: , location: Location { file: "src/trap.rs", line: 163, column: 17 }, can_unwind: true, force_no_backtrace: false }
 QEMU: Terminated
 

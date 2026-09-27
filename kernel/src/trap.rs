@@ -3,7 +3,8 @@ pub mod trampoline;
 use core::arch::naked_asm;
 
 use crate::{
-    csr::SSTATUS_SPP, debug, kprint, kprintln, kernel::syscall::syscall, print, println, process::prepare_return, read_csr, write_csr
+    csr::SSTATUS_SPP, debug, kernel::syscall::syscall, kprint, kprintln, print, println,
+    process::prepare_return, read_csr, write_csr,
 };
 
 const SIE_SEIE: usize = 1 << 9;
@@ -137,7 +138,11 @@ extern "C" fn kerneltrap() {
 
         kprintln!(
             ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}",
-            pid, sepc, sstatus, scause, stval,
+            pid,
+            sepc,
+            sstatus,
+            scause,
+            stval,
         );
         // kprintln!(">TRAP interrupt: {}", interrupt_read());
         // kprintln!(">TRAP sched locks {}", (crate::CPU).interrupt_off_stack);
@@ -153,7 +158,10 @@ extern "C" fn kerneltrap() {
                     (*crate::CPU.current).yeld();
                 }
             }
-            _ => panic!(),
+            _ => {
+                kprintln!("{:?}", (*crate::CPU.current));
+                panic!("");
+            }
         }
 
         write_csr!(sepc, sepc);
