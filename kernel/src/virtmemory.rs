@@ -245,7 +245,8 @@ impl PageTable {
                     // lower level page table
                     let root = NonNull::new((pte.ppn << 12) as *mut usize).unwrap();
                     PageTable::free_req(root);
-                    unsafe { root.write(0) };
+                    // walk() allocates page-table nodes from the heap.
+                    unsafe { HEAP_ALLOCATOR.dealloc(root.as_ptr() as *mut u8, PAGE_LAYOUT) };
                 } else {
                     // there is some unmapped allocaed page
                     panic!(

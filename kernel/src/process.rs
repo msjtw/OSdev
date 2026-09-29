@@ -22,7 +22,7 @@ use crate::{
 // NOTE: AAAAAAAAAAAAAAAAAAAAAAAA
 // Normaly (in c) 1 page stack for kernel is more than enough.
 // But this is rust and fmt (format!) allocates shitload on stack.
-pub const KERNEL_STACK_PAGES: usize = 2;
+pub const KERNEL_STACK_PAGES: usize = 4;
 
 #[macro_export]
 macro_rules! KSTACK {
