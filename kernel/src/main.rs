@@ -19,6 +19,7 @@ use spin::Once;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
+use core::ptr::write_volatile;
 
 use crate::kernel::{Cpu, Kernel};
 use crate::trap::init_trap;
@@ -159,5 +160,10 @@ pub extern "C" fn main() -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     print!("Something went wrong. {:?}\n", info);
+    // shutdown qemu
+    let shutdown = 0x5555;
+    unsafe {
+        write_volatile(0x100000 as *mut u32, shutdown);
+    }
     loop {}
 }

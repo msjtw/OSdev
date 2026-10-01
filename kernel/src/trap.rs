@@ -3,8 +3,12 @@ pub mod trampoline;
 use core::arch::naked_asm;
 
 use crate::{
-    csr::SSTATUS_SPP, debug, kernel::syscall::syscall, kprint, kprintln, print, println,
-    process::prepare_return, read_csr, write_csr,
+    csr::SSTATUS_SPP,
+    debug,
+    kernel::syscall::syscall,
+    kprint, kprintln, print, println,
+    process::{Process, prepare_return},
+    read_csr, read_csr64, write_csr, write_csr64,
 };
 
 const SIE_SEIE: usize = 1 << 9;
@@ -148,16 +152,13 @@ extern "C" fn kerneltrap() {
         // kprintln!(">TRAP sched locks {}", (crate::CPU).interrupt_off_stack);
 
         // Because trap originated in kernel it coudl (what?)
+        let proc = if !crate::CPU.current.is_null() {
+            Some(&mut (*crate::CPU.current))
+        } else {
+            None
+        };
         match scause {
-            0x80000005 => {
-                let time = read_csr!(time);
-                kprintln!(">time: 0x{:x}, next timer on: 0x{:x}", time, time + 1000000);
-                write_csr!(stimecmp, time + 1000000);
-                if !crate::CPU.current.is_null() {
-                    kprintln!("yelding");
-                    (*crate::CPU.current).yeld();
-                }
-            }
+            0x80000005 => timer(proc),
             _ => {
                 kprintln!("{:?}", (*crate::CPU.current));
                 panic!("");
@@ -214,20 +215,24 @@ pub extern "C" fn usertrap() -> usize {
 
                 syscall(&mut (*crate::CPU.current));
             }
-            0x80000005 => {
-                let time = read_csr!(time);
-                print!(
-                    "user>time: 0x{:x}, next timer on: 0x{:x}\n",
-                    time,
-                    time + 1000000
-                );
-                write_csr!(stimecmp, time + 1000000);
-                proc.yeld();
-            }
+            0x80000005 => timer(Some(proc)),
             _ => panic!("user> cause 0x{:x}, val: 0x{:x}", scause, stval),
         }
         prepare_return(proc);
         let satp = proc.pagetable.get_satp();
         satp.into()
+    }
+}
+
+unsafe fn timer(proc: Option<&mut Process>) {
+    unsafe {
+        let time = read_csr64!(time);
+        let next = time.wrapping_add(1000000);
+        print!("user>time: 0x{:x}, next timer on: 0x{:x}\n", time, next);
+        write_csr64!(stimecmp, next);
+        match proc {
+            Some(proc) => proc.yeld(),
+            None => {}
+        }
     }
 }

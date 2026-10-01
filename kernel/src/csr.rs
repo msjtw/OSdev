@@ -22,6 +22,63 @@ macro_rules! write_csr {
     }};
 }
 
+// macros for readinf 64-bit values split into 2 registers (high and low)
+// pass just the low name
+#[macro_export]
+macro_rules! read_csr64 {
+    ($csr:ident) => {{
+        let value: u64;
+
+        loop {
+            let hi1: u32;
+            let lo: u32;
+            let hi2: u32;
+
+            core::arch::asm!(
+                concat!("csrr {0}, ", stringify!($csr), "h"),
+                out(reg) hi1,
+            );
+
+            core::arch::asm!(
+                concat!("csrr {0}, ", stringify!($csr)),
+                out(reg) lo,
+            );
+
+            core::arch::asm!(
+                concat!("csrr {0}, ", stringify!($csr), "h"),
+                out(reg) hi2,
+            );
+
+            if hi1 == hi2 {
+                value = ((hi1 as u64) << 32) | (lo as u64);
+                break;
+            }
+        }
+
+        value
+    }};
+}
+
+#[macro_export]
+macro_rules! write_csr64 {
+    ($csr:ident, $value:expr) => {{
+        let value: u64 = $value;
+
+        let lo = value as u32;
+        let hi = (value >> 32) as u32;
+
+        core::arch::asm!(
+            concat!("csrw ", stringify!($csr), "h, {0}"),
+            in(reg) hi,
+        );
+
+        core::arch::asm!(
+            concat!("csrw ", stringify!($csr), ", {0}"),
+            in(reg) lo,
+        );
+    }};
+}
+
 pub const SSTATUS_SPP: u32 = 1 << 8; // Previous mode, 1=Supervisor, 0=User
 pub const SSTATUS_SPIE: u32 = 1 << 5; // Supervisor Previous Interrupt Enable
 pub const SSTATUS_UPIE: u32 = 1 << 4; // User Previous Interrupt Enable

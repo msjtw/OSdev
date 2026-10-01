@@ -1,7 +1,9 @@
 use alloc::{string::String, vec::Vec};
 
 use crate::{
-    debug, println, process::Process, virtmemory::{copy_in, copy_in_str}
+    debug, println,
+    process::Process,
+    virtmemory::{copy_in, copy_in_str},
 };
 
 pub fn sys_fork(proc: &mut Process) {

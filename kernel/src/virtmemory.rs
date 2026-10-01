@@ -392,6 +392,9 @@ impl Kvm {
         let mut kvm = Kvm { pagetable };
         // map all sections
 
+        // poweroff
+        kvm.pagetable.map(0x100000, 0x100000, PAGESIZE, PTE_W)?;
+
         // uart
         kvm.pagetable.map(UART, UART, PAGESIZE, PTE_R | PTE_W)?;
 
