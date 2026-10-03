@@ -51,6 +51,10 @@ pub fn sys_exit(proc: &mut Process) {
 
 pub fn sys_getpid() {}
 
+pub fn sys_gettid(proc: &mut Process) {
+    proc.trapframe.a0 = proc.pid.unwrap_or(0);
+}
+
 pub fn sys_sbrk() {}
 
 pub fn sys_pause() {}
@@ -58,3 +62,16 @@ pub fn sys_pause() {}
 pub fn sys_kill() {}
 
 pub fn sys_uptime() {}
+
+pub fn sys_mmap(proc: &mut Process) {
+    println!(
+        "mmap: addr={:#x} len={:#x} prot={:#x} flags={:#x} fd={} off={:#x}",
+        proc.trapframe.a0,
+        proc.trapframe.a1,
+        proc.trapframe.a2,
+        proc.trapframe.a3,
+        proc.trapframe.a4,
+        proc.trapframe.a5,
+    );
+    panic!("mmap");
+}

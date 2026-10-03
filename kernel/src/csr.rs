@@ -29,6 +29,8 @@ macro_rules! read_csr64 {
     ($csr:ident) => {{
         let value: u64;
 
+        // we read the value of hi register twice
+        // to check if it didnit change while reading lo register
         loop {
             let hi1: u32;
             let lo: u32;

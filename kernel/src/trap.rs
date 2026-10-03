@@ -216,7 +216,7 @@ pub extern "C" fn usertrap() -> usize {
                 syscall(&mut (*crate::CPU.current));
             }
             0x80000005 => timer(Some(proc)),
-            _ => panic!("user> cause 0x{:x}, val: 0x{:x}", scause, stval),
+            _ => panic!("user> cause 0x{:x}, val: 0x{:x} sepc: 0x{:x}", scause, stval, sepc),
         }
         prepare_return(proc);
         let satp = proc.pagetable.get_satp();

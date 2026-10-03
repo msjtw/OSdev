@@ -4,7 +4,11 @@ use core::{
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 
-use alloc::{alloc::Allocator, string::String, vec::Vec};
+use alloc::{
+    alloc::Allocator,
+    string::String,
+    vec::{self, Vec},
+};
 
 use crate::{
     FRAME_ALLOCATOR, HEAP_ALLOCATOR, debug, println,
@@ -218,7 +222,7 @@ impl Drop for PageTable {
 impl PageTable {
     fn new() -> PageTable {
         debug!("new pagetable :)");
-        let ptr = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut usize };
+        let ptr = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as *mut usize };
         unsafe { write_bytes(ptr, 0, 1024) };
 
         let pagetable = NonNull::new(ptr).expect("failed to allocate root page table");
@@ -280,7 +284,7 @@ impl PageTable {
             if walk_type == WalkType::Walk {
                 return None;
             }
-            let new_page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as *mut usize };
+            let new_page = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as *mut usize };
             let new_page = NonNull::new(new_page)?;
 
             unsafe { write_bytes(new_page.as_ptr(), 0, 1024) };
@@ -450,7 +454,8 @@ impl Kvm {
 
 #[derive(Debug)]
 pub struct Uvm {
-    begin: usize,
+    pub end: usize,
+    page_list: Vec<usize>,
     size: usize,
     pagetable: PageTable,
 }
@@ -459,11 +464,12 @@ impl Clone for Uvm {
     fn clone(&self) -> Self {
         let mut vm = Uvm::new().unwrap();
 
-        vm.begin = self.begin;
+        vm.page_list = self.page_list.clone();
         vm.size = self.size;
 
-        for addr in (USER_START..self.end()).step_by(PAGESIZE) {
-            let pte = unsafe { self.pagetable.walk(addr, WalkType::Walk).unwrap().read() };
+        // for addr in (USER_START..self.end()).step_by(PAGESIZE) {
+        for addr in &self.page_list {
+            let pte = unsafe { self.pagetable.walk(*addr, WalkType::Walk).unwrap().read() };
             let pte = Pte::from(pte);
             if !pte.v {
                 continue;
@@ -473,7 +479,7 @@ impl Clone for Uvm {
             unsafe { copy_nonoverlapping(from, to, PAGESIZE) };
 
             vm.pagetable
-                .map(addr, to as usize, PAGESIZE, pte.perm)
+                .map(*addr, to as usize, PAGESIZE, pte.perm)
                 .unwrap();
         }
 
@@ -491,7 +497,8 @@ impl Drop for Uvm {
 impl Uvm {
     pub fn new() -> Result<Uvm, ()> {
         let uvm = Uvm {
-            begin: USER_START,
+            end: 0,
+            page_list: Vec::new(),
             size: 0,
             pagetable: PageTable::default(),
         };
@@ -507,8 +514,8 @@ impl Uvm {
 
         debug!("text size 0x{:x}", self.size);
         // this frees all pages in this vm but leaves page tree structure
-        if self.size > 0 {
-            self.pagetable.unmap(self.begin, self.size, true).unwrap();
+        for addr in &self.page_list {
+            self.pagetable.unmap(*addr, PAGESIZE, true).unwrap();
         }
     }
 
@@ -521,56 +528,64 @@ impl Uvm {
         }
     }
 
-    pub fn end(&self) -> usize {
-        self.begin + self.size
-    }
+    // pub fn end(&self) -> usize {
+    //     self.begin + self.size
+    // }
 
-    pub fn grow(&mut self, size: usize, perm: usize) -> Result<(), ()> {
-        self.alloc(self.size + size, perm)
-    }
+    // pub fn grow(&mut self, size: usize, perm: usize) -> Result<(), ()> {
+    //     self.alloc(self.size + size, perm)
+    // }
 
     // grow new pages to size
     // it creates virt address space from USERBASE to size
-    pub fn alloc(&mut self, size: usize, perm: usize) -> Result<(), ()> {
-        while self.size < size {
+    // allocates memory at virtual address addr of size
+    pub fn alloc(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), ()> {
+        let mut allocated = 0;
+        while allocated < size {
             // NOTE: Gurad pages shoudl not be mapped
             if perm == 0 {
                 self.size += PAGESIZE;
+                allocated += PAGESIZE;
                 continue;
             }
 
-            let page = unsafe { HEAP_ALLOCATOR.alloc(PAGE_LAYOUT) as usize };
+            let page = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as usize };
             // NOTE: OOM Error
             if page == 0 {
                 return Err(());
             }
-            let end = self.end();
+
+            let alloc_addr = addr + allocated;
             if self
                 .pagetable
-                .map(end, page, PAGESIZE, perm | PTE_U)
+                .map(alloc_addr, page, PAGESIZE, perm | PTE_U)
                 .is_err()
             {
                 // NOTE: free memory on fail
                 unsafe { HEAP_ALLOCATOR.dealloc(page as *mut u8, PAGE_LAYOUT) };
                 return Err(());
             }
+            self.page_list.push(page);
             self.size += PAGESIZE;
-            debug!("uvm size: 0x{:x}", self.size);
+            allocated += PAGESIZE;
+            self.end = self.end.max(alloc_addr + PAGESIZE);
+            println!("uvm alloceted 0x{:x} size: 0x{:x}", alloc_addr, self.size);
         }
         Ok(())
     }
 
+    // FIX: Needs to be reimplemented
     // shrink virt address space to size
-    pub fn dealloc(&mut self, size: usize) -> Result<(), ()> {
-        if !size.is_multiple_of(PAGESIZE) {
-            return Err(());
-        }
-
-        let newend = USER_START + size;
-        self.pagetable.unmap(newend, self.size - size, true)?;
-        self.size = size;
-        Ok(())
-    }
+    // pub fn dealloc(&mut self, size: usize) -> Result<(), ()> {
+    //     if !size.is_multiple_of(PAGESIZE) {
+    //         return Err(());
+    //     }
+    //
+    //     let newend = USER_START + size;
+    //     self.pagetable.unmap(newend, self.size - size, true)?;
+    //     self.size = size;
+    //     Ok(())
+    // }
 
     pub fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
         let trampoline = unsafe { &_trampoline as *const usize as usize };
@@ -594,7 +609,9 @@ impl Uvm {
         if !va.is_multiple_of(PAGESIZE) {
             return Err(());
         }
+        println!("img size {:x}", img.len());
         for page in img.chunks(PAGESIZE) {
+            println!("page");
             // for w in page.chunks(4) {
             //     print!("0x{:08x}\n", u32::from_le_bytes(w.try_into().unwrap()));
             // }
@@ -612,7 +629,7 @@ impl Uvm {
                 let src_addr = page.as_ptr() as *const u8;
                 let dst_addr = pte.pa as *mut u8;
                 write_bytes(dst_addr, 0, PAGESIZE);
-                copy_nonoverlapping(src_addr, dst_addr, PAGESIZE);
+                copy_nonoverlapping(src_addr, dst_addr, page.len());
             };
             va += PAGESIZE;
         }
@@ -686,11 +703,20 @@ pub fn copy_out<T>(uv: &mut Uvm, addr: usize, data: T) -> Result<(), ()> {
 }
 
 // Copy continuous bytes
-pub fn copy_out_cont<T: Copy>(uv: &mut Uvm, addr: usize, data: &[T]) -> Result<(), ()> {
-    let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
+pub fn copy_out_cont(uv: &mut Uvm, mut addr: usize, mut data: &[u8]) -> Result<(), ()> {
+    while !data.is_empty() {
+        let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
 
-    for i in 0..data.len() {
-        unsafe { (user_addr as *mut T).add(i).write(data[i]) };
+        let page_offset = addr & (PAGESIZE - 1);
+        let bytes_in_page = PAGESIZE - page_offset;
+        let n = data.len().min(bytes_in_page);
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(data.as_ptr(), user_addr as *mut u8, n);
+        }
+
+        addr += n;
+        data = &data[n..];
     }
 
     Ok(())

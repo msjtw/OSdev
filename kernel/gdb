@@ -2,9 +2,10 @@ set architecture riscv:rv32
 set logging file qemu.log
 set logging enabled on
 target remote :1234
-symbol-file ~/Documents/osdev/rust-baremetal/kernel/target/riscv32ima-unknown-none-elf/debug/main
+symbol-file ~/Documents/osdev/os/kernel/target/riscv32ima-unknown-none-elf/debug/main
 dashboard -layout variables stack
 layout asm
 layout split 
 break main
-break process.rs:147
+
+break *0x104e2

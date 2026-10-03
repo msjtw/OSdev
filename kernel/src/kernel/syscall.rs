@@ -32,6 +32,10 @@ pub const SYS_LINK: usize = 19;
 pub const SYS_MKDIR: usize = 20;
 pub const SYS_CLOSE: usize = 21;
 
+pub const SYS_GETTID: usize = 96;
+pub const SYS_EXIT_GROUP: usize = 94;
+pub const SYS_MMAP: usize = 222;
+
 // NOTE:
 // syscall number: a7
 // arguments: a0-a5
@@ -50,6 +54,9 @@ pub fn syscall(proc: &mut Process) {
         SYS_EXEC => sys_exec(proc),
         SYS_WAIT => sys_wait(proc),
         SYS_EXIT => sys_exit(proc),
+        SYS_EXIT_GROUP => sys_exit(proc),
+        SYS_GETTID => sys_gettid(proc),
+        SYS_MMAP => sys_mmap(proc),
         _ => {
             panic!("unimplemented syscall {sys_num}")
         }

@@ -26,8 +26,8 @@ use crate::trap::init_trap;
 use crate::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
-const PRIME: &[u8] = include_bytes!("../../user/_prime.bin");
-const INIT: &[u8] = include_bytes!("../../user/_init.bin");
+const PRIME: &[u8] = include_bytes!("../../user/_prime");
+const INIT: &[u8] = include_bytes!("../../user/_hello");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -161,9 +161,8 @@ pub extern "C" fn main() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     print!("Something went wrong. {:?}\n", info);
     // shutdown qemu
-    let shutdown = 0x5555;
     unsafe {
-        write_volatile(0x100000 as *mut u32, shutdown);
+        write_volatile(0x100000 as *mut u32, 0x5555);
     }
     loop {}
 }
