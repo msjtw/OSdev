@@ -156,8 +156,14 @@ extern "C" fn kerneltrap() {
         match scause {
             0x80000005 => timer(proc),
             _ => {
-                kprintln!("{:?}", (*crate::CPU.current));
-                panic!("");
+                kprintln!(
+                    "kernel trap: pid={:?} scause=0x{:x} stval=0x{:x} sepc=0x{:x}",
+                    pid,
+                    scause,
+                    stval,
+                    sepc,
+                );
+                panic!("unhandled kernel trap");
             }
         }
 

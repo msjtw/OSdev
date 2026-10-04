@@ -8,6 +8,7 @@ mod csr;
 mod kernel;
 pub mod lock;
 mod process;
+pub mod structures;
 mod trap;
 pub mod uart;
 pub mod virtmemory;
@@ -28,6 +29,8 @@ use crate::virtmemory::RAMEND;
 
 const PRIME: &[u8] = include_bytes!("../../user/_prime");
 const INIT: &[u8] = include_bytes!("../../user/_init");
+const PIPE1: &[u8] = include_bytes!("../../user/_pipe1");
+const PIPE2: &[u8] = include_bytes!("../../user/_pipe2");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -149,7 +152,7 @@ pub extern "C" fn main() -> ! {
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
         user_p0
-            .kexec(String::from("init"), vec!["init", "10"])
+            .kexec(String::from("pipe1"), vec![])
             .unwrap();
         user_p0.state = process::ProcState::Runnable;
     }

@@ -22,7 +22,9 @@ LDFLAGS += -no-pie
 UPROGS = \
 	_prime \
 	_init \
-	_hello
+	_hello \
+	_pipe1 \
+	_pipe2
 
 all: $(UPROGS)
 

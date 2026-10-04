@@ -5,6 +5,7 @@ use crate::{
     kernel::STDIN_CHANNEL,
     lock::IntMutex,
     process::{ProcState, Process, fd::{Errno, FileOps}},
+    structures::RingBuffer,
     virtmemory::{UART, copy_in_cont, copy_out_cont},
 };
 
@@ -16,7 +17,7 @@ const UART_LSR_DATA_READY: u8 = 1 << 0;
 
 #[derive(Debug)]
 pub struct UartTerminal {
-    input: IntMutex<InputQueue>,
+    input: IntMutex<RingBuffer<INPUT_QUEUE_CAPACITY>>,
 }
 
 pub static UART_TERMINAL: UartTerminal = UartTerminal::new();
@@ -24,7 +25,7 @@ pub static UART_TERMINAL: UartTerminal = UartTerminal::new();
 impl UartTerminal {
     pub const fn new() -> Self {
         Self {
-            input: IntMutex::new(InputQueue::new()),
+            input: IntMutex::new(RingBuffer::new()),
         }
     }
 
@@ -125,59 +126,6 @@ pub fn uart_write(bytes: &[u8]) {
 
 pub fn uart_input_poll() {
     UART_TERMINAL.poll_input();
-}
-
-/// Fixed-size FIFO for bytes received from the UART.
-///
-/// It is owned by `UartTerminal`, so polling and `read(fd = 0)` share one
-/// input stream without allocating in an interrupt handler.
-#[derive(Debug)]
-struct InputQueue {
-    bytes: [u8; INPUT_QUEUE_CAPACITY],
-    head: usize,
-    len: usize,
-}
-
-impl InputQueue {
-    pub const fn new() -> Self {
-        Self {
-            bytes: [0; INPUT_QUEUE_CAPACITY],
-            head: 0,
-            len: 0,
-        }
-    }
-
-    pub fn push(&mut self, byte: u8) -> bool {
-        if self.len == INPUT_QUEUE_CAPACITY {
-            return false;
-        }
-
-        let tail = (self.head + self.len) % INPUT_QUEUE_CAPACITY;
-        self.bytes[tail] = byte;
-        self.len += 1;
-        true
-    }
-
-    pub fn pop(&mut self) -> Option<u8> {
-        if self.len == 0 {
-            return None;
-        }
-
-        let byte = self.bytes[self.head];
-        self.head = (self.head + 1) % INPUT_QUEUE_CAPACITY;
-        self.len -= 1;
-        Some(byte)
-    }
-
-    // pub fn is_empty(&self) -> bool {
-    //     self.len == 0
-    // }
-}
-
-impl Default for InputQueue {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 // Stack-allocated writer for use in trap/interrupt context where heap

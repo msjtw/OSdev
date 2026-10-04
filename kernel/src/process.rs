@@ -1,4 +1,5 @@
 mod elf;
+pub mod pipe;
 pub mod fd;
 pub mod trapframe;
 
@@ -268,6 +269,8 @@ impl Process {
         let img: &[u8] = match program {
             "init" => crate::INIT,
             "prime" => crate::PRIME,
+            "pipe1" => crate::PIPE1,
+            "pipe2" => crate::PIPE2,
             _ => return Err(()),
         };
 
@@ -360,7 +363,7 @@ impl Process {
             // Write terminating '\0'.
             copy_out_cont(&mut pagetree, sp + bytes.len(), &[0])?;
 
-            arg_ptrs.push(sp);
+            arg_ptrs.push(sp); 
         }
 
         // We copied arguments in reverse order.
