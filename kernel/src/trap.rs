@@ -140,7 +140,7 @@ extern "C" fn kerneltrap() {
             pid = (*crate::CPU.current).pid;
         }
 
-        kprintln!(
+        debug!(
             ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}",
             pid,
             sepc,
@@ -231,11 +231,14 @@ unsafe fn timer(proc: Option<&mut Process>) {
     unsafe {
         let time = read_csr64!(time);
         let next = time.wrapping_add(1000000);
-        print!("user>time: 0x{:x}, next timer on: 0x{:x}\n", time, next);
+        // print!("user>time: 0x{:x}, next timer on: 0x{:x}\n", time, next);
         write_csr64!(stimecmp, next);
-        match proc {
-            Some(proc) => proc.yeld(),
-            None => {}
+
+        // poll uart on timer
+        crate::uart::uart_input_poll();
+
+        if let Some(proc) = proc {
+            proc.yeld();
         }
     }
 }

@@ -158,6 +158,15 @@ impl Process {
         unsafe { self.lock.unlock_manual() };
     }
 
+    /// Switch away from the current process after its caller has marked it
+    /// Sleeping and acquired `self.lock`. The caller must release any other
+    /// locks before calling this so the scheduler can run.
+    pub unsafe fn sleep_locked(&mut self) {
+        unsafe { sched(&mut self.context) };
+        self.sleep_channel = None;
+        unsafe { self.lock.unlock_manual() };
+    }
+
     pub fn kfork(&mut self) -> Result<usize, ()> {
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(())?;
@@ -431,81 +440,6 @@ impl Process {
         Ok(())
     }
 
-    // pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), ()> {
-    //     // TODO: when file sytem is implemented load from filr
-    //
-    //     let img: &[u8] = match path.trim_end() {
-    //         "init" => crate::INIT,
-    //         "prime" => crate::PRIME,
-    //         _ => panic!("kexec: unknown program"),
-    //     };
-    //     let mut pagetree = Uvm::new()?;
-    //     pagetree.init_proc(self)?;
-    //     for segment in elf::get_elf_segments(img)? {
-    //         if segment.p_type != elf::PT_LOAD {
-    //             // segment not to be loaded
-    //             continue;
-    //         }
-    //         // alloc space and load segment
-    //         pagetree.alloc(
-    //             segment.p_vaddr as usize,
-    //             segment.p_memsz as usize,
-    //             elf_flags_to_pte(segment.p_flags),
-    //         );
-    //         pagetree.load(
-    //             segment.p_vaddr as usize,
-    //             elf::segment_bytes(img, &segment).unwrap(),
-    //         )?;
-    //     }
-    //
-    //     // alloc guardpage
-    //     pagetree.alloc(pagetree.end, PAGESIZE, 0).unwrap();
-    //
-    //     // alloc user stack
-    //     pagetree
-    //         .alloc(pagetree.end, PAGESIZE, PTE_W | PTE_R)
-    //         .unwrap();
-    //
-    //     let mut sp = pagetree.end;
-    //     let stack_base = sp - PAGESIZE;
-    //
-    //     // TODO: add name as argv[0]
-    //
-    //     // Copy args to stack
-    //     let mut ustack = Vec::new();
-    //     for arg in &argv {
-    //         sp -= arg.len();
-    //         sp &= !0b111; // sp is aligned to 16 bytes
-    //         if sp < stack_base {
-    //             return Err(());
-    //         }
-    //         copy_out_cont(&mut pagetree, sp, arg.as_bytes())?;
-    //         // save addr of each arg
-    //         ustack.push(sp);
-    //     }
-    //     ustack.push(0);
-    //
-    //     // copy arg addr onto stack
-    //     sp -= ustack.len() * size_of::<usize>(); // no need to align
-    //     if sp < stack_base {
-    //         return Err(());
-    //     }
-    //     copy_out_cont(&mut pagetree, sp, &ustack)?;
-    //
-    //     // prepare arguments on stack
-    //     self.trapframe.a0 = argv.len();
-    //     self.trapframe.a1 = sp;
-    //
-    //     // switch to new pagetree
-    //     self.pagetable = pagetree;
-    //     self.trapframe.sp = sp;
-    //     kprintln!("sp: 0x{:x}", sp);
-    //     // self.trapframe.epc = 0x100f;
-    //     self.trapframe.epc = USER_START;
-    //
-    //     Ok(())
-    // }
-
     pub fn kexit(&mut self, xstatus: u32) -> ! {
         if self.pid == Some(0) {
             panic!("init exit");
@@ -519,7 +453,7 @@ impl Process {
             KERNEL.get().unwrap().lock().reparent(self.pid);
 
             // wakeup parent
-            KERNEL.get().unwrap().lock().wakeup(self.parent);
+            KERNEL.get().unwrap().lock().wakeup(self.parent, true);
 
             unsafe { self.lock.lock_manual() };
 
@@ -674,7 +608,7 @@ unsafe fn sched(context: &mut Context) {
 
 pub fn scheduler() -> ! {
     loop {
-        print!("scheduler: ");
+        // print!("scheduler: ");
 
         let mut found = ptr::null_mut();
         unsafe {
@@ -706,13 +640,13 @@ pub fn scheduler() -> ! {
             unsafe {
                 (*found).quants += 1;
                 crate::CPU.current = found;
-                println!("switching to process {:?}", (*found).pid);
+                // println!("switching to process {:?}", (*found).pid);
                 switch(&mut crate::CPU.context, &mut (*found).context);
                 crate::CPU.current = ptr::null_mut();
                 (*found).lock.unlock_manual();
             }
         } else {
-            println!("no processes found");
+            // println!("no processes found");
             unsafe {
                 interrupt_on();
                 asm!("wfi");

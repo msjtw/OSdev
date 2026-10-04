@@ -12,9 +12,11 @@ int main() {
         printf("calculating %d-th prime: \n", i);
         if(!fork()){
             // child
+            int n;
+            scanf("%d", &n);
             char buff[20];
             memset(buff, 0, 20);
-            sprintf(buff, "%d", i);
+            sprintf(buff, "%d", n);
             execlp("prime", buff, NULL);
         } else{
             //parent

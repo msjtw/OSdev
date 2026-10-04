@@ -3,11 +3,12 @@ pub mod syscall;
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, KSTACK, print,
-    process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe},
-    trap::{interrupt_off, interrupt_on, interrupt_read},
-    virtmemory::{self, Kvm, PAGESIZE},
+    FRAME_ALLOCATOR, KSTACK, print, process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe}, trap::{interrupt_off, interrupt_on, interrupt_read}, uart, virtmemory::{self, Kvm, PAGESIZE},
 };
+
+pub const STDIN_CHANNEL: usize = usize::MAX;
+
+
 
 // Holds current execution state
 #[derive(Default)]
@@ -54,6 +55,7 @@ pub struct Kernel {
     pub kvm: Option<virtmemory::Kvm>,
     pub process_table: Vec<Process>,
     pub pid: usize,
+    pub input_queue: uart::InputQueue,
 }
 
 impl Kernel {
@@ -70,7 +72,6 @@ impl Kernel {
             let proc = Process::new(i)?;
             kvm.alloc_kstack(KSTACK!(i));
 
-            print!("kstack: 0x{:x}\n", proc.kstack);
             self.process_table.push(proc);
         }
         Ok(())
@@ -112,16 +113,21 @@ impl Kernel {
             }
         }
         if any_child {
-            self.wakeup(Some(0));
+            self.wakeup(Some(0), true);
         }
     }
 
-    pub fn wakeup(&mut self, channel: Option<usize>) {
+    pub fn wakeup(&mut self, channel: Option<usize>, wake_all: bool) {
         unsafe {
             for proc in &mut self.process_table {
                 proc.lock.lock_manual();
                 if proc.state == ProcState::Sleeping && proc.sleep_channel == channel {
                     proc.state = ProcState::Runnable;
+                    proc.lock.unlock_manual();
+                    if !wake_all {
+                        return;
+                    }
+                    continue;
                 }
                 proc.lock.unlock_manual();
             }

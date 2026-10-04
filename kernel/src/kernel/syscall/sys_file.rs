@@ -1,10 +1,68 @@
 use alloc::string::String;
 
 use crate::{
+    KERNEL,
+    kernel::{STDIN_CHANNEL, uart::INPUT_QUEUE_CAPACITY},
     process::Process,
     uart::uart_write,
     virtmemory::{copy_in_bytes, copy_in_cont, copy_out_cont},
 };
+
+/// Linux RISC-V read for the UART-backed stdin descriptor.
+pub fn sys_read(proc: &mut Process) {
+    let fd = proc.trapframe.a0;
+    let addr = proc.trapframe.a1;
+    let size = proc.trapframe.a2;
+
+    if fd != 0 {
+        proc.trapframe.a0 = (-9isize) as usize; // EBADF
+        return;
+    }
+    if size == 0 {
+        proc.trapframe.a0 = 0;
+        return;
+    }
+
+    let mut bytes = [0u8; INPUT_QUEUE_CAPACITY];
+
+    loop {
+        let mut count = 0;
+        let mut sleeping = false;
+
+        {
+            // Hold the queue lock while either consuming input or publishing
+            // the sleeping state, so timer-side polling cannot lose a wakeup.
+            let mut kernel = KERNEL.get().unwrap().lock();
+            let requested = size.min(bytes.len());
+            while count < requested {
+                let Some(byte) = kernel.input_queue.pop() else {
+                    break;
+                };
+                bytes[count] = byte;
+                count += 1;
+            }
+
+            if count == 0 {
+                unsafe { proc.lock.lock_manual() };
+                proc.sleep_channel = Some(STDIN_CHANNEL);
+                proc.state = crate::process::ProcState::Sleeping;
+                sleeping = true;
+            }
+        }
+
+        if count != 0 {
+            proc.trapframe.a0 = match copy_out_cont(&mut proc.pagetable, addr, &bytes[..count]) {
+                Ok(()) => count,
+                Err(()) => (-14isize) as usize, // EFAULT
+            };
+            return;
+        }
+
+        if sleeping {
+            unsafe { proc.sleep_locked() };
+        }
+    }
+}
 
 pub fn sys_write(proc: &mut Process) {
     let fd = proc.trapframe.a0;
