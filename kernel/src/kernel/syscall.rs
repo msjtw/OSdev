@@ -3,7 +3,7 @@ mod sys_proc;
 
 use crate::{
     kernel::syscall::{
-        sys_file::{sys_ioctl, sys_read, sys_write, sys_writev},
+        sys_file::{sys_close, sys_dup, sys_ioctl, sys_read, sys_write, sys_writev},
         sys_proc::*,
     },
     print,
@@ -12,6 +12,8 @@ use crate::{
 
 // Linux RISC-V syscall numbers.
 pub const SYS_IOCTL: usize = 29;
+pub const SYS_DUP: usize = 23;
+pub const SYS_CLOSE: usize = 57;
 pub const SYS_READ: usize = 63;
 pub const SYS_WRITE: usize = 64;
 pub const SYS_WRITEV: usize = 66;
@@ -36,6 +38,8 @@ pub fn syscall(proc: &mut Process) {
     // let args: [u32; 6];
 
     match sys_num {
+        SYS_DUP => sys_dup(proc),
+        SYS_CLOSE => sys_close(proc),
         SYS_READ => sys_read(proc),
         SYS_WRITE => sys_write(proc),
         SYS_WRITEV => sys_writev(proc),

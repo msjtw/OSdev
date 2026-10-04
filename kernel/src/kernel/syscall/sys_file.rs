@@ -19,8 +19,8 @@ fn fd_ops(
     fd: usize,
     access: FdAccess,
 ) -> Result<&'static dyn FileOps, Errno> {
-    let entry = proc
-        .fds
+    let fds = proc.fds.lock();
+    let entry = fds
         .get(fd)
         .and_then(Option::as_ref)
         .ok_or(Errno::BadFileDescriptor)?;
@@ -30,6 +30,46 @@ fn fd_ops(
         FdAccess::Write if !entry.writable => Err(Errno::BadFileDescriptor),
         _ => Ok(entry.ops),
     }
+}
+
+/// Linux RISC-V dup. The duplicate is installed in the lowest available slot.
+pub fn sys_dup(proc: &mut Process) {
+    let oldfd = proc.trapframe.a0;
+
+    let mut fds = proc.fds.lock();
+    let Some(entry) = fds.get(oldfd).and_then(Option::as_ref) else {
+        proc.trapframe.a0 = fd_error(Errno::BadFileDescriptor);
+        return;
+    };
+    let duplicate = *entry;
+
+    if let Some(newfd) = fds.iter().position(Option::is_none) {
+        fds[newfd] = Some(duplicate);
+        proc.trapframe.a0 = newfd;
+    } else {
+        let newfd = fds.len();
+        fds.push(Some(duplicate));
+        proc.trapframe.a0 = newfd;
+    }
+}
+
+/// Linux RISC-V close. Descriptor targets are static for now, so closing only
+/// clears this process's table slot.
+pub fn sys_close(proc: &mut Process) {
+    let fd = proc.trapframe.a0;
+
+    let mut fds = proc.fds.lock();
+    let Some(slot) = fds.get_mut(fd) else {
+        proc.trapframe.a0 = fd_error(Errno::BadFileDescriptor);
+        return;
+    };
+    if slot.is_none() {
+        proc.trapframe.a0 = fd_error(Errno::BadFileDescriptor);
+        return;
+    }
+
+    *slot = None;
+    proc.trapframe.a0 = 0;
 }
 
 /// Linux RISC-V read for the UART-backed stdin descriptor.

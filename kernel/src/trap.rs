@@ -6,7 +6,7 @@ use crate::{
     csr::SSTATUS_SPP,
     debug,
     kernel::syscall::syscall,
-    kprintln, print,
+    kprintln,
     process::{Process, prepare_return},
     read_csr, read_csr64, write_csr, write_csr64,
 };
@@ -142,11 +142,7 @@ extern "C" fn kerneltrap() {
 
         debug!(
             ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}",
-            pid,
-            sepc,
-            sstatus,
-            scause,
-            stval,
+            pid, sepc, sstatus, scause, stval,
         );
         // kprintln!(">TRAP interrupt: {}", interrupt_read());
         // kprintln!(">TRAP sched locks {}", (crate::CPU).interrupt_off_stack);

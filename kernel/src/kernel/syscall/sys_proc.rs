@@ -2,7 +2,7 @@ use alloc::{string::String, vec::Vec};
 
 use crate::{
     debug, println,
-    process::Process,
+    process::{ForkError, Process},
     virtmemory::{copy_in, copy_in_str, copy_out_cont},
 };
 
@@ -11,6 +11,11 @@ use crate::{
 /// child_tid are ignored unless their corresponding clone flags are set.
 pub fn sys_clone(proc: &mut Process) {
     const SIGCHLD: usize = 17;
+    const CSIGNAL: usize = 0xff;
+    const CLONE_FILES: usize = 0x0000_0400;
+    const CLONE_VFORK: usize = 0x0000_4000;
+    const CLONE_PARENT_SETTID: usize = 0x0010_0000;
+    const CLONE_CHILD_SETTID: usize = 0x0100_0000;
 
     let flags = proc.trapframe.a0;
     let stack = proc.trapframe.a1;
@@ -18,7 +23,14 @@ pub fn sys_clone(proc: &mut Process) {
     let tls = proc.trapframe.a3;
     let child_tid = proc.trapframe.a4;
 
-    if flags != SIGCHLD || stack != 0 || parent_tid != 0 {
+    let signal = flags & CSIGNAL;
+    let clone_flags = flags & !CSIGNAL;
+
+    if signal != SIGCHLD
+        || clone_flags & !(CLONE_FILES | CLONE_VFORK | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID) != 0
+        || stack != 0
+        || (parent_tid != 0 && clone_flags & CLONE_PARENT_SETTID == 0)
+    {
         println!(
             "clone: unsupported options flags={:#x} stack={:#x} parent_tid={:#x} tls={:#x} child_tid={:#x}",
             flags, stack, parent_tid, tls, child_tid
@@ -27,9 +39,23 @@ pub fn sys_clone(proc: &mut Process) {
         return;
     }
 
-    match proc.kfork() {
-        Ok(pid) => proc.trapframe.a0 = pid,
-        Err(()) => proc.trapframe.a0 = (-11isize) as usize, // EAGAIN
+    let share_files = clone_flags & CLONE_FILES != 0;
+    let vfork = clone_flags & CLONE_VFORK != 0;
+    let parent_tid = (clone_flags & CLONE_PARENT_SETTID != 0).then_some(parent_tid);
+    let child_tid = (clone_flags & CLONE_CHILD_SETTID != 0).then_some(child_tid);
+
+    match proc.kfork(share_files, vfork, parent_tid, child_tid) {
+        Ok(pid) => {
+            proc.trapframe.a0 = pid;
+
+            if vfork {
+                // kfork published the sleeping state while holding the
+                // process lock, before it made the child runnable.
+                unsafe { proc.sleep_locked() };
+            }
+        }
+        Err(ForkError::NoProcess) => proc.trapframe.a0 = (-11isize) as usize, // EAGAIN
+        Err(ForkError::Fault) => proc.trapframe.a0 = (-14isize) as usize, // EFAULT
     }
 }
 
@@ -56,6 +82,8 @@ pub fn sys_exec(proc: &mut Process) {
     let argv_str = argv.iter().map(|s| s.as_ref()).collect();
     if proc.kexec(path, argv_str).is_err() {
         proc.trapframe.a0 = (-2isize) as usize; // ENOENT (or exec setup failure)
+    } else {
+        proc.release_vfork_parent();
     }
 }
 

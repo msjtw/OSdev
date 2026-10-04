@@ -1,6 +1,10 @@
-use crate::process::Process;
-use alloc::vec::Vec;
-use crate::uart::UART_TERMINAL;
+use alloc::{sync::Arc, vec::Vec};
+
+use crate::{
+    lock::IntMutex,
+    process::Process,
+    uart::UART_TERMINAL,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
@@ -45,10 +49,17 @@ impl FileDescriptor {
     }
 }
 
-pub fn standard_fds() -> Vec<Option<FileDescriptor>> {
+pub type FdTable = Vec<Option<FileDescriptor>>;
+pub type SharedFdTable = Arc<IntMutex<FdTable>>;
+
+pub fn standard_fds() -> FdTable {
     alloc::vec![
         Some(FileDescriptor::new(&UART_TERMINAL, true, false)),
         Some(FileDescriptor::new(&UART_TERMINAL, false, true)),
         Some(FileDescriptor::new(&UART_TERMINAL, false, true)),
     ]
+}
+
+pub fn new_standard_fds() -> SharedFdTable {
+    Arc::new(IntMutex::new(standard_fds()))
 }

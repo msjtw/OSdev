@@ -3,6 +3,7 @@ use core::ptr::{read_volatile, write_volatile};
 use crate::{
     KERNEL,
     kernel::STDIN_CHANNEL,
+    lock::IntMutex,
     process::{ProcState, Process, fd::{Errno, FileOps}},
     virtmemory::{UART, copy_in_cont, copy_out_cont},
 };
@@ -14,9 +15,39 @@ const UART_LSR: usize = 5;
 const UART_LSR_DATA_READY: u8 = 1 << 0;
 
 #[derive(Debug)]
-pub struct UartTerminal;
+pub struct UartTerminal {
+    input: IntMutex<InputQueue>,
+}
 
-pub static UART_TERMINAL: UartTerminal = UartTerminal;
+pub static UART_TERMINAL: UartTerminal = UartTerminal::new();
+
+impl UartTerminal {
+    pub const fn new() -> Self {
+        Self {
+            input: IntMutex::new(InputQueue::new()),
+        }
+    }
+
+    pub fn poll_input(&self) {
+        let uart = UART as *const u8;
+        let mut received = false;
+
+        {
+            let mut input = self.input.lock();
+
+            // Reading the receiver holding register consumes one byte. Drain
+            // all bytes queued in the UART receive FIFO before this tick ends.
+            while unsafe { read_volatile(uart.add(UART_LSR)) } & UART_LSR_DATA_READY != 0 {
+                let byte = unsafe { read_volatile(uart.add(UART_RHR)) };
+                received |= input.push(byte);
+            }
+        }
+
+        if received {
+            KERNEL.get().unwrap().lock().wakeup(Some(STDIN_CHANNEL), false);
+        }
+    }
+}
 
 impl FileOps for UartTerminal {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
@@ -33,10 +64,10 @@ impl FileOps for UartTerminal {
             {
                 // Keep queue consumption and publication of the sleeping
                 // state atomic with respect to timer-side UART polling.
-                let mut kernel = KERNEL.get().unwrap().lock();
+                let mut input = self.input.lock();
                 let requested = len.min(bytes.len());
                 while count < requested {
-                    let Some(byte) = kernel.input_queue.pop() else {
+                    let Some(byte) = input.pop() else {
                         break;
                     };
                     bytes[count] = byte;
@@ -93,27 +124,15 @@ pub fn uart_write(bytes: &[u8]) {
 }
 
 pub fn uart_input_poll() {
-    let uart = UART as *const u8;
-    let mut received = false;
-    let mut kernel = KERNEL.get().unwrap().lock();
-
-    // Reading the receiver holding register consumes one byte. Drain all
-    // bytes queued in the UART receive FIFO before returning from this tick.
-    while unsafe { read_volatile(uart.add(UART_LSR)) } & UART_LSR_DATA_READY != 0 {
-        let byte = unsafe { read_volatile(uart.add(UART_RHR)) };
-        received |= kernel.input_queue.push(byte);
-    }
-
-    if received {
-        kernel.wakeup(Some(STDIN_CHANNEL), false);
-    }
+    UART_TERMINAL.poll_input();
 }
 
 /// Fixed-size FIFO for bytes received from the UART.
 ///
-/// It is kept in `Kernel` so timer-side polling and `read(fd = 0)` share one
+/// It is owned by `UartTerminal`, so polling and `read(fd = 0)` share one
 /// input stream without allocating in an interrupt handler.
-pub struct InputQueue {
+#[derive(Debug)]
+struct InputQueue {
     bytes: [u8; INPUT_QUEUE_CAPACITY],
     head: usize,
     len: usize,
@@ -150,9 +169,9 @@ impl InputQueue {
         Some(byte)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
+    // pub fn is_empty(&self) -> bool {
+    //     self.len == 0
+    // }
 }
 
 impl Default for InputQueue {

@@ -33,6 +33,12 @@ use crate::{
 // But this is rust and fmt (format!) allocates shitload on stack.
 pub const KERNEL_STACK_PAGES: usize = 4;
 
+/// A vfork wait channel is distinct from the parent-PID channels used by wait.
+/// PIDs begin at one, so this can never equal the stdin channel (`usize::MAX`).
+pub const fn vfork_channel(pid: usize) -> usize {
+    usize::MAX - pid
+}
+
 #[macro_export]
 macro_rules! KSTACK {
     ($n:expr) => {
@@ -52,6 +58,12 @@ pub enum ProcState {
     Running,
     Zombie,
     Delete,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ForkError {
+    NoProcess,
+    Fault,
 }
 
 #[repr(C)]
@@ -109,11 +121,13 @@ pub struct Process {
     pub context: Context,
     pub xstatus: u32,
     pub sleep_channel: Option<usize>,
+    pub vfork_channel: Option<usize>,
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
-    pub fds: Vec<Option<fd::FileDescriptor>>, // linux leaves slots after closed fd, this will set
-                                               // it to None and still allow to access fd by index
+    // Linux leaves slots after close, so a table entry becomes None while its
+    // index remains a valid descriptor number for later reuse.
+    pub fds: fd::SharedFdTable,
 }
 
 impl Process {
@@ -128,10 +142,11 @@ impl Process {
             context: Context::default(),
             xstatus: 0,
             sleep_channel: None,
+            vfork_channel: None,
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
-            fds: fd::standard_fds(),
+            fds: fd::new_standard_fds(),
         })
     }
 
@@ -143,8 +158,9 @@ impl Process {
         self.context = Context::default();
         self.xstatus = 0;
         self.sleep_channel = None;
+        self.vfork_channel = None;
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
-        self.fds = fd::standard_fds();
+        self.fds = fd::new_standard_fds();
 
         Ok(())
     }
@@ -172,30 +188,77 @@ impl Process {
         unsafe { self.lock.unlock_manual() };
     }
 
-    pub fn kfork(&mut self) -> Result<usize, ()> {
+    /// Wake a parent blocked by CLONE_VFORK after this process has execed or
+    /// is about to exit.
+    pub fn release_vfork_parent(&mut self) {
+        let Some(channel) = self.vfork_channel.take() else {
+            return;
+        };
+        KERNEL.get().unwrap().lock().wakeup(Some(channel), false);
+    }
+
+    pub fn kfork(
+        &mut self,
+        share_files: bool,
+        vfork: bool,
+        parent_tid: Option<usize>,
+        child_tid: Option<usize>,
+    ) -> Result<usize, ForkError> {
+        let fds = if share_files {
+            self.fds.clone()
+        } else {
+            alloc::sync::Arc::new(IntMutex::new(self.fds.lock().clone()))
+        };
+
         let mut kernel = crate::KERNEL.get().unwrap().lock();
-        let child_proc = kernel.allocproc().ok_or(())?;
+        let child_proc = kernel.allocproc().ok_or(ForkError::NoProcess)?;
         child_proc.trapframe = Box::new_in((*self.trapframe).clone(), &FRAME_ALLOCATOR);
-        child_proc.fds = self.fds.clone();
+        child_proc.fds = fds;
+        let child_pid = child_proc.pid.ok_or(ForkError::NoProcess)?;
+        child_proc.vfork_channel = vfork.then(|| vfork_channel(child_pid));
 
         let mut uvm = self.pagetable.clone();
-        uvm.init_proc(child_proc)?;
+        uvm.init_proc(child_proc).map_err(|()| ForkError::NoProcess)?;
         child_proc.pagetable = uvm;
+
+        let pid_bytes = (child_pid as u32).to_ne_bytes();
+        if let Some(addr) = child_tid {
+            if copy_out_cont(&mut child_proc.pagetable, addr, &pid_bytes).is_err() {
+                child_proc.free().ok();
+                unsafe { child_proc.lock.unlock_manual() };
+                return Err(ForkError::Fault);
+            }
+        }
+        if let Some(addr) = parent_tid {
+            if copy_out_cont(&mut self.pagetable, addr, &pid_bytes).is_err() {
+                child_proc.free().ok();
+                unsafe { child_proc.lock.unlock_manual() };
+                return Err(ForkError::Fault);
+            }
+        }
 
         // return 0 in child
         child_proc.trapframe.a0 = 0;
         // and cpid in parent
-        self.trapframe.a0 = child_proc.pid.unwrap();
+        self.trapframe.a0 = child_pid;
 
         unsafe { child_proc.lock.unlock_manual() };
         // NOTE: not sure if it's ok
         child_proc.parent = self.pid;
 
+        if vfork {
+            // Publish the parent sleep state before the child can become
+            // runnable. Keep this lock held until sys_clone schedules out.
+            unsafe { self.lock.lock_manual() };
+            self.sleep_channel = Some(vfork_channel(child_pid));
+            self.state = ProcState::Sleeping;
+        }
+
         unsafe { child_proc.lock.lock_manual() };
         child_proc.state = ProcState::Runnable;
         unsafe { child_proc.lock.unlock_manual() };
 
-        child_proc.pid.ok_or(())
+        Ok(child_pid)
     }
 
     pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), ()> {
@@ -450,6 +513,8 @@ impl Process {
         if self.pid == Some(0) {
             panic!("init exit");
         }
+
+        self.release_vfork_parent();
 
         // TODO: close all open files
         {

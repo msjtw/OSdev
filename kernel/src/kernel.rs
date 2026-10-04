@@ -3,7 +3,7 @@ pub mod syscall;
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, KSTACK, print, process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe}, trap::{interrupt_off, interrupt_on, interrupt_read}, uart, virtmemory::{self, Kvm, PAGESIZE},
+    FRAME_ALLOCATOR, KSTACK, process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe}, trap::{interrupt_off, interrupt_on, interrupt_read}, virtmemory::{self, Kvm, PAGESIZE},
 };
 
 pub const STDIN_CHANNEL: usize = usize::MAX;
@@ -55,7 +55,6 @@ pub struct Kernel {
     pub kvm: Option<virtmemory::Kvm>,
     pub process_table: Vec<Process>,
     pub pid: usize,
-    pub input_queue: uart::InputQueue,
 }
 
 impl Kernel {
