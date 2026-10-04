@@ -152,7 +152,7 @@ pub extern "C" fn main() -> ! {
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
         user_p0
-            .kexec(String::from("pipe1"), vec![])
+            .kexec(String::from("init"), vec![])
             .unwrap();
         user_p0.state = process::ProcState::Runnable;
     }

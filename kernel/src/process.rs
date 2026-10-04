@@ -170,11 +170,7 @@ impl Process {
 
     // NOTE: because yield is a keyword
     pub fn yeld(&mut self) {
-        println!("interrupt: {}", interrupt_read());
-        unsafe { println!("sched locks {}", (crate::CPU).interrupt_off_stack) };
         unsafe { self.lock.lock_manual() };
-        println!("interrupt: {}", interrupt_read());
-        unsafe { println!("sched locks {}", (crate::CPU).interrupt_off_stack) };
         self.state = ProcState::Runnable;
         unsafe { sched(&mut self.context) };
         unsafe { self.lock.unlock_manual() };
