@@ -1,4 +1,5 @@
-#include "user.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 int is_prime(int a) {
     if (a <= 1)

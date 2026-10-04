@@ -1,4 +1,11 @@
-#include "user.h"
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 int main() {
     for (int i = 1;; i++) {
@@ -7,9 +14,8 @@ int main() {
             // child
             char buff[20];
             memset(buff, 0, 20);
-            itoa(i, buff);
-            char* args[] = {buff, 0};
-            exec("prime", args);
+            sprintf(buff, "%d", 20);
+            execlp("prime", buff, NULL);
         } else{
             //parent
             wait(0);
