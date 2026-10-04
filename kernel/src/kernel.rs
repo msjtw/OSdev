@@ -3,11 +3,10 @@ pub mod syscall;
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    debug, print, println,
-    process::{forkret, trapframe::Trapframe, Context, ProcState, Process, KERNEL_STACK_PAGES},
+    FRAME_ALLOCATOR, KSTACK, print,
+    process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trapframe::Trapframe},
     trap::{interrupt_off, interrupt_on, interrupt_read},
     virtmemory::{self, Kvm, PAGESIZE},
-    FRAME_ALLOCATOR, KSTACK,
 };
 
 // Holds current execution state

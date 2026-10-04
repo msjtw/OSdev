@@ -12,8 +12,8 @@ use crate::lock::IntMutex;
 use alloc::alloc::{AllocError, Allocator};
 
 use crate::{
-    virtmemory::{PAGESIZE, PAGE_LAYOUT},
     HEAP_ALLOCATOR,
+    virtmemory::{PAGE_LAYOUT, PAGESIZE},
 };
 
 #[derive(Default)]

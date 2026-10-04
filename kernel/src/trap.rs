@@ -6,8 +6,8 @@ use crate::{
     csr::SSTATUS_SPP,
     debug,
     kernel::syscall::syscall,
-    kprint, kprintln, print, println,
-    process::{prepare_return, Process},
+    kprintln, print,
+    process::{Process, prepare_return},
     read_csr, read_csr64, write_csr, write_csr64,
 };
 

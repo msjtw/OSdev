@@ -1,6 +1,4 @@
-use alloc::vec::{self, Vec};
-
-use crate::println;
+use alloc::vec::Vec;
 
 const EI_NIDENT: usize = 16;
 

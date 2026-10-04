@@ -81,11 +81,9 @@ macro_rules! debug {
         }
     }};
     ($($arg:tt)*) => {{
-        unsafe{
             if $crate::DEBUG {
                 $crate::uart::uart_write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
             }
-        }
     }};
 }
 
@@ -135,7 +133,7 @@ pub extern "C" fn main() -> ! {
     {
         let mut kernel = KERNEL.get().unwrap().lock();
 
-        debug!("Hello world\n");
+        unsafe { debug!("Hello world\n") };
 
         kernel.init().expect("Kernel init fail");
 
@@ -145,7 +143,7 @@ pub extern "C" fn main() -> ! {
             .as_mut()
             .expect("KVM not initialized")
             .start_kvm();
-        debug!("Virt started\n");
+        unsafe { debug!("Virt started\n") };
 
         // Start init
         let user_p0 = kernel.allocproc().unwrap();

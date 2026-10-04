@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod sys_file;
 mod sys_proc;
 
@@ -19,6 +17,7 @@ pub const SYS_WRITEV: usize = 66;
 pub const SYS_EXIT: usize = 93;
 pub const SYS_EXIT_GROUP: usize = 94;
 pub const SYS_WAITID: usize = 95;
+pub const SYS_SET_TID_ADDRESS: usize = 96;
 pub const SYS_RT_SIGPROCMASK: usize = 135;
 pub const SYS_GETTID: usize = 178;
 pub const SYS_CLONE: usize = 220;
@@ -43,6 +42,7 @@ pub fn syscall(proc: &mut Process) {
         SYS_CLONE => sys_clone(proc),
         SYS_EXECVE => sys_exec(proc),
         SYS_WAITID => sys_waitid(proc),
+        SYS_SET_TID_ADDRESS => sys_set_tid_address(proc),
         SYS_EXIT => sys_exit(proc),
         SYS_EXIT_GROUP => sys_exit(proc),
         SYS_GETTID => sys_gettid(proc),

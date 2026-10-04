@@ -14,8 +14,7 @@ use crate::{
     FRAME_ALLOCATOR, KERNEL,
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
-    debug, kprintln,
-    lock::{IntMutex, IntMutexGuard},
+    lock::IntMutex,
     print, println,
     process::trapframe::Trapframe,
     read_csr,
@@ -24,10 +23,7 @@ use crate::{
         trampoline::{_trampoline, userret, uservec},
         usertrap,
     },
-    virtmemory::{
-        self, PAGESIZE, PTE_R, PTE_U, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out,
-        copy_out_cont,
-    },
+    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
     write_csr,
 };
 
@@ -213,7 +209,7 @@ impl Process {
                 segment.p_vaddr as usize,
                 segment.p_memsz as usize,
                 elf_flags_to_pte(segment.p_flags),
-            );
+            )?;
 
             pagetree.load(
                 segment.p_vaddr as usize,
@@ -536,7 +532,7 @@ impl Process {
         panic!("cordyceps")
     }
 
-    pub fn kwait_result(&mut self, nohang: bool) -> Result<Option<(usize, u32)>, ()> {
+    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32)>, ()> {
         loop {
             let parent_pid = self.pid;
             let mut has_kids = false;
@@ -597,54 +593,6 @@ impl Process {
                 unsafe { self.lock.unlock_manual() };
             }
         }
-    }
-
-    pub fn kwait(&mut self, status_addr: usize) -> i32 {
-        match self.kwait_result(false) {
-            Ok(Some((pid, status))) => {
-                if status_addr != 0 {
-                    copy_out(&mut self.pagetable, status_addr, status).unwrap();
-                }
-                pid as i32
-            }
-            Ok(None) | Err(()) => -1,
-        }
-    }
-    // pub fn kwait(&mut self, status_addr: usize) -> i32 {
-    //     loop {
-    //         let mut has_kids = false;
-    //
-    //         for proc in &mut KERNEL.get().unwrap().lock().process_table {
-    //             if proc.parent == self.pid {
-    //                 has_kids = true;
-    //                 if proc.state == ProcState::Zombie {
-    //                     if status_addr != 0 {
-    //                         copy_out(&mut self.pagetable, status_addr, proc.xstatus).unwrap();
-    //                     }
-    //                     let pid = proc.pid.expect("pid-less child (what?)") as i32;
-    //                     proc.free().unwrap();
-    //                     return pid;
-    //                 }
-    //             }
-    //         }
-    //
-    //         if !has_kids {
-    //             println!("no kids");
-    //             return -1;
-    //         }
-    //         self.sleep(self.pid);
-    //     }
-    // }
-    //
-    fn sleep(&mut self, channel: Option<usize>) {
-        unsafe { self.lock.lock_manual() };
-        self.sleep_channel = channel;
-        self.state = ProcState::Sleeping;
-
-        unsafe { sched(&mut self.context) };
-
-        self.sleep_channel = None;
-        unsafe { self.lock.unlock_manual() };
     }
 }
 

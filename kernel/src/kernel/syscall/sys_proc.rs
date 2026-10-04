@@ -6,11 +6,6 @@ use crate::{
     virtmemory::{copy_in, copy_in_str, copy_out_cont},
 };
 
-pub fn sys_fork(proc: &mut Process) {
-    debug!("fork");
-    proc.kfork().unwrap();
-}
-
 /// Support the fork-like Linux RISC-V clone form used by musl. Linux RISC-V
 /// argument order is flags, stack, parent_tid, tls, child_tid. TLS and
 /// child_tid are ignored unless their corresponding clone flags are set.
@@ -39,7 +34,7 @@ pub fn sys_clone(proc: &mut Process) {
 }
 
 pub fn sys_exec(proc: &mut Process) {
-    debug!("exec");
+    unsafe { debug!("exec") };
     let path_addr = proc.trapframe.a0;
     let mut argv_addr = proc.trapframe.a1;
 
@@ -62,13 +57,6 @@ pub fn sys_exec(proc: &mut Process) {
     if proc.kexec(path, argv_str).is_err() {
         proc.trapframe.a0 = (-2isize) as usize; // ENOENT (or exec setup failure)
     }
-}
-
-pub fn sys_wait(proc: &mut Process) {
-    debug!("wait");
-    let status_addr = proc.trapframe.a0;
-    let ret = proc.kwait(status_addr);
-    proc.trapframe.a0 = ret as usize;
 }
 
 /// Minimal Linux RISC-V waitid support: P_ALL + WEXITED, optionally WNOHANG.
@@ -110,7 +98,7 @@ pub fn sys_waitid(proc: &mut Process) {
         return;
     }
 
-    match proc.kwait_result(options & WNOHANG != 0) {
+    match proc.kwait(options & WNOHANG != 0) {
         Ok(Some((pid, status))) => {
             info[0..4].copy_from_slice(&SIGCHLD.to_ne_bytes());
             info[8..12].copy_from_slice(&CLD_EXITED.to_ne_bytes());
@@ -128,13 +116,10 @@ pub fn sys_waitid(proc: &mut Process) {
 }
 
 pub fn sys_exit(proc: &mut Process) {
-    debug!("exit");
-    let status_addr = proc.trapframe.a0;
+    unsafe { debug!("exit") };
     let xstatus = proc.trapframe.a0;
     proc.kexit(xstatus as u32);
 }
-
-pub fn sys_getpid() {}
 
 pub fn sys_gettid(proc: &mut Process) {
     proc.trapframe.a0 = proc.pid.unwrap_or(0);
@@ -145,13 +130,11 @@ pub fn sys_rt_sigprocmask(proc: &mut Process) {
     proc.trapframe.a0 = 0;
 }
 
-pub fn sys_sbrk() {}
-
-pub fn sys_pause() {}
-
-pub fn sys_kill() {}
-
-pub fn sys_uptime() {}
+/// The kernel has no threads or futexes, so clear-child-TID handling is not
+/// needed. Return the caller's TID as Linux requires.
+pub fn sys_set_tid_address(proc: &mut Process) {
+    proc.trapframe.a0 = proc.pid.unwrap_or(0);
+}
 
 pub fn sys_mmap(proc: &mut Process) {
     println!(

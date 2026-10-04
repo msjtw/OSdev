@@ -1,20 +1,16 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
-    ptr::{copy_nonoverlapping, write_bytes, NonNull},
+    ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 
-use alloc::{
-    alloc::Allocator,
-    string::String,
-    vec::{self, Vec},
-};
+use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
-    debug, println,
-    process::{trapframe::Trapframe, Process},
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR, debug,
+    process::{Process, trapframe::Trapframe},
     trap::trampoline::_trampoline,
-    write_csr, FRAME_ALLOCATOR, HEAP_ALLOCATOR,
+    write_csr,
 };
 
 unsafe extern "C" {
@@ -214,14 +210,14 @@ impl Default for PageTable {
 
 impl Drop for PageTable {
     fn drop(&mut self) {
-        debug!("dropping pagetable");
+        unsafe { debug!("dropping pagetable") };
         self.free();
     }
 }
 
 impl PageTable {
     fn new() -> PageTable {
-        debug!("new pagetable :)");
+        unsafe { debug!("new pagetable :)") };
         let ptr = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as *mut usize };
         unsafe { write_bytes(ptr, 0, 1024) };
 
@@ -240,7 +236,7 @@ impl PageTable {
     }
 
     fn free_req(root: NonNull<usize>) {
-        debug!("removing pt node");
+        unsafe { debug!("removing pt node") };
         for i in 0..1024 {
             let pte = unsafe { root.add(i).read() };
             let pte = Pte::from(pte);
@@ -271,8 +267,8 @@ impl PageTable {
         let pte_addr = unsafe { self.root.as_ptr().add(index) };
         let pte = unsafe { pte_addr.read() };
         if virt_a == 0xffffe000 {
-            debug!("{:?}", pte_addr);
-            debug!("{:x}", pte);
+            unsafe { debug!("{:?}", pte_addr) };
+            unsafe { debug!("{:x}", pte) };
         }
 
         let pte = Pte::from(pte);
@@ -291,7 +287,7 @@ impl PageTable {
             let mut new_pte = Pte::from_addr(new_page.as_ptr() as usize);
             new_pte.v = true;
             let tmp: usize = new_pte.into();
-            debug!("new pte: {:?}", tmp);
+            unsafe { debug!("new pte: {:?}", tmp) };
             unsafe { pte_addr.write(tmp) };
             a = new_page;
         }
@@ -300,7 +296,7 @@ impl PageTable {
         let pte_addr = unsafe { a.add(index) };
 
         if virt_a == 0xffffe000 {
-            debug!("pte_addr: {:x?}", pte_addr);
+            unsafe { debug!("pte_addr: {:x?}", pte_addr) };
         }
         Some(pte_addr)
     }
@@ -335,7 +331,7 @@ impl PageTable {
             unsafe { pte_addr.write(pte) };
 
             if vaddr != paddr {
-                debug!("mapping 0x{:x} -> 0x{:x}", vaddr, paddr);
+                unsafe { debug!("mapping 0x{:x} -> 0x{:x}", vaddr, paddr) };
             }
             vaddr += PAGESIZE;
             paddr += PAGESIZE;
@@ -346,14 +342,14 @@ impl PageTable {
     // remove mappings from virt to virt+size
     // if free it will also free the mapped pages but not the internal tree pages
     fn unmap(&mut self, virt: usize, size: usize, free: bool) -> Result<(), ()> {
-        debug!("freeing virt: 0x{:x} size 0x{:x}", virt, size);
+        unsafe { debug!("freeing virt: 0x{:x} size 0x{:x}", virt, size) };
         if !size.is_multiple_of(PAGESIZE) {
             return Err(());
         }
 
         let mut va = virt;
         for _ in 0..(size / PAGESIZE) {
-            debug!("unmapping addr: 0x{:x}, size: 0x{:x}", va, size);
+            unsafe { debug!("unmapping addr: 0x{:x}, size: 0x{:x}", va, size) };
             if let Some(pte_addr) = self.walk(va as usize, WalkType::Walk) {
                 let pte = Pte::from(unsafe { pte_addr.read() });
                 if pte.v {
@@ -506,13 +502,13 @@ impl Uvm {
     }
 
     pub fn free(&mut self) {
-        debug!("uvm free");
-        debug!("trampoline");
+        unsafe { debug!("uvm free") };
+        unsafe { debug!("trampoline") };
         self.pagetable.unmap(TRAMPOLINE, PAGESIZE, false).unwrap();
-        debug!("trapframe");
+        unsafe { debug!("trapframe") };
         self.pagetable.unmap(TRAPFRAME, PAGESIZE, false).unwrap();
 
-        debug!("text size 0x{:x}", self.size);
+        unsafe { debug!("text size 0x{:x}", self.size) };
         // this frees all pages in this vm but leaves page tree structure
         for addr in &self.page_list {
             self.pagetable.unmap(*addr, PAGESIZE, true).unwrap();
