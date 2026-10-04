@@ -2,12 +2,10 @@ use core::ptr::write_volatile;
 
 use crate::virtmemory::UART;
 
-pub fn uart_print(message: &str) {
+pub fn uart_write(bytes: &[u8]) {
     let uart = UART as *mut u8;
-    for c in message.bytes() {
-        unsafe {
-            write_volatile(uart, c);
-        }
+    for &byte in bytes {
+        unsafe { write_volatile(uart, byte) };
     }
 }
 

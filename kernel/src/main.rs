@@ -27,7 +27,7 @@ use crate::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
 const PRIME: &[u8] = include_bytes!("../../user/_prime");
-const INIT: &[u8] = include_bytes!("../../user/_hello");
+const INIT: &[u8] = include_bytes!("../../user/_init");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -57,17 +57,17 @@ global_asm!(
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {{
-        $crate::uart::uart_print(&alloc::format!($($arg)*));
+        $crate::uart::uart_write(alloc::format!($($arg)*).as_bytes());
     }};
 }
 
 #[macro_export]
 macro_rules! println {
     () => {{
-        $crate::uart::uart_print("\n");
+        $crate::uart::uart_write(b"\n");
     }};
     ($($arg:tt)*) => {{
-        $crate::uart::uart_print(&alloc::format!("{}\n", alloc::format!($($arg)*)));
+        $crate::uart::uart_write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
     }};
 }
 
@@ -77,13 +77,13 @@ static mut DEBUG: bool = false;
 macro_rules! debug {
     () => {{
         if $crate::DEBUG {
-            $crate::uart_print("\n");
+            $crate::uart::uart_write(b"\n");
         }
     }};
     ($($arg:tt)*) => {{
         unsafe{
             if $crate::DEBUG {
-                $crate::uart::uart_print(&alloc::format!("{}\n", alloc::format!($($arg)*)));
+                $crate::uart::uart_write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
             }
         }
     }};

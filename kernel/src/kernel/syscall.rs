@@ -4,7 +4,10 @@ mod sys_file;
 mod sys_proc;
 
 use crate::{
-    kernel::syscall::{sys_file::sys_write, sys_proc::*},
+    kernel::syscall::{
+        sys_file::{sys_ioctl, sys_write, sys_writev},
+        sys_proc::*,
+    },
     print,
     process::Process,
 };
@@ -31,6 +34,9 @@ pub const SYS_UNLINK: usize = 18;
 pub const SYS_LINK: usize = 19;
 pub const SYS_MKDIR: usize = 20;
 pub const SYS_CLOSE: usize = 21;
+// Linux RISC-V syscall number used by libc for terminal queries.
+pub const SYS_IOCTL: usize = 29;
+pub const SYS_WRITEV: usize = 66;
 
 pub const SYS_GETTID: usize = 96;
 pub const SYS_EXIT_GROUP: usize = 94;
@@ -46,10 +52,10 @@ pub fn syscall(proc: &mut Process) {
     let sys_num = proc.trapframe.a7;
     // let args: [u32; 6];
 
-    // print!("syscall: {}\n", sys_num);
-
     match sys_num {
         SYS_WRITE => sys_write(proc),
+        SYS_WRITEV => sys_writev(proc),
+        SYS_IOCTL => sys_ioctl(proc),
         SYS_FORK => sys_fork(proc),
         SYS_EXEC => sys_exec(proc),
         SYS_WAIT => sys_wait(proc),
@@ -57,8 +63,10 @@ pub fn syscall(proc: &mut Process) {
         SYS_EXIT_GROUP => sys_exit(proc),
         SYS_GETTID => sys_gettid(proc),
         SYS_MMAP => sys_mmap(proc),
+        // Return -ENOSYS for unsupported calls instead of crashing the kernel.
         _ => {
-            panic!("unimplemented syscall {sys_num}")
+            print!("unimplemented syscall: {}\n", sys_num);
+            proc.trapframe.a0 = (-38isize) as usize;
         }
     }
 }

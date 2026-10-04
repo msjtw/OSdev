@@ -676,6 +676,28 @@ pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, len: usize) -> Result<Ve
     Ok(bytes)
 }
 
+/// Copy bytes from a user address space, correctly handling page boundaries.
+pub fn copy_in_bytes(uv: &mut Uvm, mut addr: usize, mut len: usize) -> Result<Vec<u8>, ()> {
+    let mut bytes = Vec::with_capacity(len);
+    while len != 0 {
+        let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
+        let page_offset = addr & (PAGESIZE - 1);
+        let n = len.min(PAGESIZE - page_offset);
+        let old_len = bytes.len();
+        bytes.resize(old_len + n, 0);
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                user_addr as *const u8,
+                bytes[old_len..].as_mut_ptr(),
+                n,
+            );
+        }
+        addr += n;
+        len -= n;
+    }
+    Ok(bytes)
+}
+
 pub fn copy_in_str(uv: &mut Uvm, addr: usize) -> Result<String, ()> {
     let mut bytes = Vec::new();
     let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
