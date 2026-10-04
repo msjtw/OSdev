@@ -7,7 +7,7 @@ use crate::{
     debug,
     kernel::syscall::syscall,
     kprint, kprintln, print, println,
-    process::{Process, prepare_return},
+    process::{prepare_return, Process},
     read_csr, read_csr64, write_csr, write_csr64,
 };
 
@@ -216,7 +216,10 @@ pub extern "C" fn usertrap() -> usize {
                 syscall(&mut (*crate::CPU.current));
             }
             0x80000005 => timer(Some(proc)),
-            _ => panic!("user> cause 0x{:x}, val: 0x{:x} sepc: 0x{:x}", scause, stval, sepc),
+            _ => panic!(
+                "user> cause 0x{:x}, val: 0x{:x} sepc: 0x{:x}",
+                scause, stval, sepc
+            ),
         }
         prepare_return(proc);
         let satp = proc.pagetable.get_satp();

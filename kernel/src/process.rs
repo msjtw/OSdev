@@ -190,10 +190,11 @@ impl Process {
     pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), ()> {
         // TODO: when file system is implemented, load from file.
 
-        let img: &[u8] = match path.trim_end() {
+        let program = path.trim_end().rsplit('/').next().unwrap_or(path.as_str());
+        let img: &[u8] = match program {
             "init" => crate::INIT,
             "prime" => crate::PRIME,
-            _ => panic!("kexec: unknown program"),
+            _ => return Err(()),
         };
 
         let mut pagetree = Uvm::new()?;
@@ -252,21 +253,11 @@ impl Process {
         let mut sp = stack_top;
 
         // ------------------------------------------------------------
-        // Build argv.
-        //
-        // argv[0] should normally contain the executable name.
-        //
-        // Your current API receives `path` separately, so construct:
-        //
-        //     argv[0] = path
-        //     argv[1...] = supplied argv
-        //
+        // Build argv exactly as supplied by execve. The kernel's initial
+        // process caller includes its own argv[0] as well.
         // ------------------------------------------------------------
 
-        let mut args: Vec<&str> = Vec::with_capacity(argv.len() + 1);
-
-        args.push(path.as_str());
-        args.extend_from_slice(&argv);
+        let args = argv;
 
         // ------------------------------------------------------------
         // Copy argument strings onto the stack.
@@ -441,9 +432,6 @@ impl Process {
 
         self.trapframe.epc = USER_START;
 
-        kprintln!("initial user sp: 0x{:x}", sp);
-        kprintln!("argc: {}", argc);
-
         Ok(())
     }
 
@@ -548,7 +536,7 @@ impl Process {
         panic!("cordyceps")
     }
 
-    pub fn kwait(&mut self, status_addr: usize) -> i32 {
+    pub fn kwait_result(&mut self, nohang: bool) -> Result<Option<(usize, u32)>, ()> {
         loop {
             let parent_pid = self.pid;
             let mut has_kids = false;
@@ -592,15 +580,15 @@ impl Process {
             }
 
             if let Some(pid) = zombie_pid {
-                if status_addr != 0 {
-                    copy_out(&mut self.pagetable, status_addr, zombie_xstatus).unwrap();
-                }
-                return pid as i32;
+                return Ok(Some((pid, zombie_xstatus)));
             }
 
             if !has_kids {
-                println!("no kids");
-                return -1;
+                return Err(());
+            }
+
+            if nohang {
+                return Ok(None);
             }
 
             if parent_locked_for_sleep {
@@ -608,6 +596,18 @@ impl Process {
                 self.sleep_channel = None;
                 unsafe { self.lock.unlock_manual() };
             }
+        }
+    }
+
+    pub fn kwait(&mut self, status_addr: usize) -> i32 {
+        match self.kwait_result(false) {
+            Ok(Some((pid, status))) => {
+                if status_addr != 0 {
+                    copy_out(&mut self.pagetable, status_addr, status).unwrap();
+                }
+                pid as i32
+            }
+            Ok(None) | Err(()) => -1,
         }
     }
     // pub fn kwait(&mut self, status_addr: usize) -> i32 {

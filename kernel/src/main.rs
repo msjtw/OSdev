@@ -150,7 +150,9 @@ pub extern "C" fn main() -> ! {
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
-        user_p0.kexec(String::from("init"), vec!["10"]).unwrap();
+        user_p0
+            .kexec(String::from("init"), vec!["init", "10"])
+            .unwrap();
         user_p0.state = process::ProcState::Runnable;
     }
     // debug!("into the schedulervere");

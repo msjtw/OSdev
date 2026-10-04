@@ -1,7 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
-    ptr::{NonNull, copy_nonoverlapping, write_bytes},
+    ptr::{copy_nonoverlapping, write_bytes, NonNull},
 };
 
 use alloc::{
@@ -11,10 +11,10 @@ use alloc::{
 };
 
 use crate::{
-    FRAME_ALLOCATOR, HEAP_ALLOCATOR, debug, println,
-    process::{Process, trapframe::Trapframe},
+    debug, println,
+    process::{trapframe::Trapframe, Process},
     trap::trampoline::_trampoline,
-    write_csr,
+    write_csr, FRAME_ALLOCATOR, HEAP_ALLOCATOR,
 };
 
 unsafe extern "C" {
@@ -565,11 +565,12 @@ impl Uvm {
                 unsafe { HEAP_ALLOCATOR.dealloc(page as *mut u8, PAGE_LAYOUT) };
                 return Err(());
             }
-            self.page_list.push(page);
+            // Keep virtual page addresses: clone() walks these VAs, and free()
+            // unmaps them from this page table.
+            self.page_list.push(alloc_addr);
             self.size += PAGESIZE;
             allocated += PAGESIZE;
             self.end = self.end.max(alloc_addr + PAGESIZE);
-            println!("uvm alloceted 0x{:x} size: 0x{:x}", alloc_addr, self.size);
         }
         Ok(())
     }
@@ -609,9 +610,7 @@ impl Uvm {
         if !va.is_multiple_of(PAGESIZE) {
             return Err(());
         }
-        println!("img size {:x}", img.len());
         for page in img.chunks(PAGESIZE) {
-            println!("page");
             // for w in page.chunks(4) {
             //     print!("0x{:08x}\n", u32::from_le_bytes(w.try_into().unwrap()));
             // }
