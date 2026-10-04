@@ -14,7 +14,7 @@ int main() {
             // child
             char buff[20];
             memset(buff, 0, 20);
-            sprintf(buff, "%d", 20);
+            sprintf(buff, "%d", i);
             execlp("prime", buff, NULL);
         } else{
             //parent
