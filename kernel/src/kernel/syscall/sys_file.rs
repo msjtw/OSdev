@@ -1,12 +1,36 @@
-use alloc::string::String;
-
 use crate::{
-    KERNEL,
-    kernel::{STDIN_CHANNEL, uart::INPUT_QUEUE_CAPACITY},
+    process::fd::{Errno, FileOps},
     process::Process,
-    uart::uart_write,
-    virtmemory::{copy_in_bytes, copy_in_cont, copy_out_cont},
+    virtmemory::copy_in_bytes,
 };
+
+enum FdAccess {
+    Read,
+    Write,
+    Any,
+}
+
+fn fd_error(error: Errno) -> usize {
+    error.as_retval()
+}
+
+fn fd_ops(
+    proc: &Process,
+    fd: usize,
+    access: FdAccess,
+) -> Result<&'static dyn FileOps, Errno> {
+    let entry = proc
+        .fds
+        .get(fd)
+        .and_then(Option::as_ref)
+        .ok_or(Errno::BadFileDescriptor)?;
+
+    match access {
+        FdAccess::Read if !entry.readable => Err(Errno::BadFileDescriptor),
+        FdAccess::Write if !entry.writable => Err(Errno::BadFileDescriptor),
+        _ => Ok(entry.ops),
+    }
+}
 
 /// Linux RISC-V read for the UART-backed stdin descriptor.
 pub fn sys_read(proc: &mut Process) {
@@ -14,54 +38,17 @@ pub fn sys_read(proc: &mut Process) {
     let addr = proc.trapframe.a1;
     let size = proc.trapframe.a2;
 
-    if fd != 0 {
-        proc.trapframe.a0 = (-9isize) as usize; // EBADF
-        return;
-    }
-    if size == 0 {
-        proc.trapframe.a0 = 0;
-        return;
-    }
-
-    let mut bytes = [0u8; INPUT_QUEUE_CAPACITY];
-
-    loop {
-        let mut count = 0;
-        let mut sleeping = false;
-
-        {
-            // Hold the queue lock while either consuming input or publishing
-            // the sleeping state, so timer-side polling cannot lose a wakeup.
-            let mut kernel = KERNEL.get().unwrap().lock();
-            let requested = size.min(bytes.len());
-            while count < requested {
-                let Some(byte) = kernel.input_queue.pop() else {
-                    break;
-                };
-                bytes[count] = byte;
-                count += 1;
-            }
-
-            if count == 0 {
-                unsafe { proc.lock.lock_manual() };
-                proc.sleep_channel = Some(STDIN_CHANNEL);
-                proc.state = crate::process::ProcState::Sleeping;
-                sleeping = true;
-            }
-        }
-
-        if count != 0 {
-            proc.trapframe.a0 = match copy_out_cont(&mut proc.pagetable, addr, &bytes[..count]) {
-                Ok(()) => count,
-                Err(()) => (-14isize) as usize, // EFAULT
-            };
+    let ops = match fd_ops(proc, fd, FdAccess::Read) {
+        Ok(ops) => ops,
+        Err(error) => {
+            proc.trapframe.a0 = fd_error(error);
             return;
         }
-
-        if sleeping {
-            unsafe { proc.sleep_locked() };
-        }
-    }
+    };
+    proc.trapframe.a0 = match ops.read(proc, addr, size) {
+        Ok(count) => count,
+        Err(error) => fd_error(error),
+    };
 }
 
 pub fn sys_write(proc: &mut Process) {
@@ -69,15 +56,17 @@ pub fn sys_write(proc: &mut Process) {
     let addr = proc.trapframe.a1;
     let size = proc.trapframe.a2;
 
-    if fd != 1 {
-        panic!("Write to fd {fd}");
-    }
-
-    let bytes = copy_in_cont(&mut proc.pagetable, addr, size).unwrap();
-    let msg = String::from_utf8(bytes).unwrap();
-
-    uart_write(msg.as_bytes());
-    proc.trapframe.a0 = 0;
+    let ops = match fd_ops(proc, fd, FdAccess::Write) {
+        Ok(ops) => ops,
+        Err(error) => {
+            proc.trapframe.a0 = fd_error(error);
+            return;
+        }
+    };
+    proc.trapframe.a0 = match ops.write(proc, addr, size) {
+        Ok(count) => count,
+        Err(error) => fd_error(error),
+    };
 }
 
 /// Linux RISC-V writev for the UART-backed stdout descriptor.
@@ -86,10 +75,13 @@ pub fn sys_writev(proc: &mut Process) {
     let mut iov_addr = proc.trapframe.a1;
     let iov_count = proc.trapframe.a2;
 
-    if fd != 1 {
-        proc.trapframe.a0 = (-9isize) as usize; // EBADF
-        return;
-    }
+    let ops = match fd_ops(proc, fd, FdAccess::Write) {
+        Ok(ops) => ops,
+        Err(error) => {
+            proc.trapframe.a0 = fd_error(error);
+            return;
+        }
+    };
     if iov_count > 1024 {
         proc.trapframe.a0 = (-22isize) as usize; // EINVAL
         return;
@@ -116,27 +108,41 @@ pub fn sys_writev(proc: &mut Process) {
         let mut offset = 0;
         while offset < len {
             let chunk_len = (len - offset).min(256);
-            let bytes = match base
+            let addr = match base
                 .checked_add(offset)
-                .and_then(|addr| copy_in_bytes(&mut proc.pagetable, addr, chunk_len).ok())
             {
-                Some(bytes) => bytes,
+                Some(addr) => addr,
                 None => {
                     proc.trapframe.a0 = if written == 0 {
-                        (-14isize) as usize
+                        fd_error(Errno::Fault)
                     } else {
                         written
                     };
                     return;
                 }
             };
-            let Some(total) = written.checked_add(chunk_len) else {
-                proc.trapframe.a0 = (-22isize) as usize; // EINVAL
-                return;
-            };
-            uart_write(&bytes);
-            written = total;
-            offset += chunk_len;
+            match ops.write(proc, addr, chunk_len) {
+                Ok(count) => {
+                    let Some(total) = written.checked_add(count) else {
+                        proc.trapframe.a0 = fd_error(Errno::InvalidArgument);
+                        return;
+                    };
+                    written = total;
+                    if count == 0 {
+                        proc.trapframe.a0 = written;
+                        return;
+                    }
+                    offset += count;
+                    if count < chunk_len {
+                        proc.trapframe.a0 = written;
+                        return;
+                    }
+                }
+                Err(error) => {
+                    proc.trapframe.a0 = if written == 0 { fd_error(error) } else { written };
+                    return;
+                }
+            }
         }
         iov_addr = match iov_addr.checked_add(iovec_size) {
             Some(addr) => addr,
@@ -160,24 +166,15 @@ pub fn sys_ioctl(proc: &mut Process) {
     let op = proc.trapframe.a1;
     let arg = proc.trapframe.a2;
 
-    if fd != 1 {
-        proc.trapframe.a0 = (-9isize) as usize; // EBADF
-        return;
-    }
-
-    const TIOCGWINSZ: usize = 0x5413;
-    if op != TIOCGWINSZ {
-        proc.trapframe.a0 = (-25isize) as usize; // ENOTTY
-        return;
-    }
-
-    // struct winsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; }
-    // Use a conventional 24x80 terminal; pixel dimensions are unknown.
-    let mut winsize = [0u8; 8];
-    winsize[0..2].copy_from_slice(&24u16.to_ne_bytes());
-    winsize[2..4].copy_from_slice(&80u16.to_ne_bytes());
-    proc.trapframe.a0 = match copy_out_cont(&mut proc.pagetable, arg, &winsize) {
-        Ok(()) => 0,
-        Err(()) => (-14isize) as usize, // EFAULT
+    let ops = match fd_ops(proc, fd, FdAccess::Any) {
+        Ok(ops) => ops,
+        Err(error) => {
+            proc.trapframe.a0 = fd_error(error);
+            return;
+        }
+    };
+    proc.trapframe.a0 = match ops.ioctl(proc, op, arg) {
+        Ok(result) => result,
+        Err(error) => fd_error(error),
     };
 }

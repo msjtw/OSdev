@@ -1,4 +1,5 @@
 mod elf;
+pub mod fd;
 pub mod trapframe;
 
 use alloc::{string::String, vec::Vec};
@@ -15,7 +16,7 @@ use crate::{
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
-    print, println,
+    println,
     process::trapframe::Trapframe,
     read_csr,
     trap::{
@@ -111,6 +112,8 @@ pub struct Process {
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
+    pub fds: Vec<Option<fd::FileDescriptor>>, // linux leaves slots after closed fd, this will set
+                                               // it to None and still allow to access fd by index
 }
 
 impl Process {
@@ -128,6 +131,7 @@ impl Process {
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
+            fds: fd::standard_fds(),
         })
     }
 
@@ -140,6 +144,7 @@ impl Process {
         self.xstatus = 0;
         self.sleep_channel = None;
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
+        self.fds = fd::standard_fds();
 
         Ok(())
     }
@@ -171,6 +176,7 @@ impl Process {
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(())?;
         child_proc.trapframe = Box::new_in((*self.trapframe).clone(), &FRAME_ALLOCATOR);
+        child_proc.fds = self.fds.clone();
 
         let mut uvm = self.pagetable.clone();
         uvm.init_proc(child_proc)?;
