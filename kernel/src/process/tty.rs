@@ -3,7 +3,7 @@ use crate::{
     process::{
         Process,
         fd::{Errno, FileOps},
-    }, uart::{UART_DRIVER, UartDriver}, virtmemory::{copy_in_cont, copy_out_cont},
+    }, drivers::uart::{UART_DRIVER, UartDriver}, virtmemory::{copy_in_cont, copy_out_cont},
 };
 
 // Linux RISC-V's kernel termios ABI, used by the TCGETS/TCSETS ioctls.

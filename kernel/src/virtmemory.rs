@@ -7,7 +7,7 @@ use core::{
 use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, HEAP_ALLOCATOR, debug,
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR, log,
     process::{Process, trapframe::Trapframe},
     trap::trampoline::_trampoline,
     write_csr,
@@ -210,14 +210,14 @@ impl Default for PageTable {
 
 impl Drop for PageTable {
     fn drop(&mut self) {
-        unsafe { debug!("dropping pagetable") };
+        log::debug!("dropping pagetable");
         self.free();
     }
 }
 
 impl PageTable {
     fn new() -> PageTable {
-        unsafe { debug!("new pagetable :)") };
+        log::debug!("new pagetable :)");
         let ptr = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as *mut usize };
         unsafe { write_bytes(ptr, 0, 1024) };
 
@@ -236,7 +236,7 @@ impl PageTable {
     }
 
     fn free_req(root: NonNull<usize>) {
-        unsafe { debug!("removing pt node") };
+        log::debug!("removing pt node");
         for i in 0..1024 {
             let pte = unsafe { root.add(i).read() };
             let pte = Pte::from(pte);
@@ -267,8 +267,8 @@ impl PageTable {
         let pte_addr = unsafe { self.root.as_ptr().add(index) };
         let pte = unsafe { pte_addr.read() };
         if virt_a == 0xffffe000 {
-            unsafe { debug!("{:?}", pte_addr) };
-            unsafe { debug!("{:x}", pte) };
+            log::debug!("{:?}", pte_addr);
+            log::debug!("{:x}", pte);
         }
 
         let pte = Pte::from(pte);
@@ -287,7 +287,7 @@ impl PageTable {
             let mut new_pte = Pte::from_addr(new_page.as_ptr() as usize);
             new_pte.v = true;
             let tmp: usize = new_pte.into();
-            unsafe { debug!("new pte: {:?}", tmp) };
+            log::debug!("new pte: {:?}", tmp);
             unsafe { pte_addr.write(tmp) };
             a = new_page;
         }
@@ -296,7 +296,7 @@ impl PageTable {
         let pte_addr = unsafe { a.add(index) };
 
         if virt_a == 0xffffe000 {
-            unsafe { debug!("pte_addr: {:x?}", pte_addr) };
+            log::debug!("pte_addr: {:x?}", pte_addr);
         }
         Some(pte_addr)
     }
@@ -331,7 +331,7 @@ impl PageTable {
             unsafe { pte_addr.write(pte) };
 
             if vaddr != paddr {
-                unsafe { debug!("mapping 0x{:x} -> 0x{:x}", vaddr, paddr) };
+                log::debug!("mapping 0x{:x} -> 0x{:x}", vaddr, paddr);
             }
             vaddr += PAGESIZE;
             paddr += PAGESIZE;
@@ -342,14 +342,14 @@ impl PageTable {
     // remove mappings from virt to virt+size
     // if free it will also free the mapped pages but not the internal tree pages
     fn unmap(&mut self, virt: usize, size: usize, free: bool) -> Result<(), ()> {
-        unsafe { debug!("freeing virt: 0x{:x} size 0x{:x}", virt, size) };
+        log::debug!("freeing virt: 0x{:x} size 0x{:x}", virt, size);
         if !size.is_multiple_of(PAGESIZE) {
             return Err(());
         }
 
         let mut va = virt;
         for _ in 0..(size / PAGESIZE) {
-            unsafe { debug!("unmapping addr: 0x{:x}, size: 0x{:x}", va, size) };
+            log::debug!("unmapping addr: 0x{:x}, size: 0x{:x}", va, size);
             if let Some(pte_addr) = self.walk(va as usize, WalkType::Walk) {
                 let pte = Pte::from(unsafe { pte_addr.read() });
                 if pte.v {
@@ -502,13 +502,13 @@ impl Uvm {
     }
 
     pub fn free(&mut self) {
-        unsafe { debug!("uvm free") };
-        unsafe { debug!("trampoline") };
+        log::debug!("uvm free");
+        log::debug!("trampoline");
         self.pagetable.unmap(TRAMPOLINE, PAGESIZE, false).unwrap();
-        unsafe { debug!("trapframe") };
+        log::debug!("trapframe");
         self.pagetable.unmap(TRAPFRAME, PAGESIZE, false).unwrap();
 
-        unsafe { debug!("text size 0x{:x}", self.size) };
+        log::debug!("text size 0x{:x}", self.size);
         // this frees all pages in this vm but leaves page tree structure
         for addr in &self.page_list {
             self.pagetable.unmap(*addr, PAGESIZE, true).unwrap();

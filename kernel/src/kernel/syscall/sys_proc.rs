@@ -1,7 +1,7 @@
 use alloc::{string::String, vec::Vec};
 
 use crate::{
-    debug, println,
+    log,
     process::{ForkError, Process},
     virtmemory::{copy_in, copy_in_str, copy_out_cont},
 };
@@ -31,7 +31,7 @@ pub fn sys_clone(proc: &mut Process) {
         || stack != 0
         || (parent_tid != 0 && clone_flags & CLONE_PARENT_SETTID == 0)
     {
-        println!(
+        log::logln!(
             "clone: unsupported options flags={:#x} stack={:#x} parent_tid={:#x} tls={:#x} child_tid={:#x}",
             flags, stack, parent_tid, tls, child_tid
         );
@@ -60,7 +60,7 @@ pub fn sys_clone(proc: &mut Process) {
 }
 
 pub fn sys_exec(proc: &mut Process) {
-    unsafe { debug!("exec") };
+    log::debug!("exec");
     let path_addr = proc.trapframe.a0;
     let mut argv_addr = proc.trapframe.a1;
 
@@ -106,7 +106,7 @@ pub fn sys_waitid(proc: &mut Process) {
         || options & !(WEXITED | WNOHANG) != 0
         || usage_addr != 0
     {
-        println!(
+        log::logln!(
             "waitid: unsupported options idtype={} id={} options={:#x} usage={:#x}",
             idtype, id, options, usage_addr
         );
@@ -144,7 +144,7 @@ pub fn sys_waitid(proc: &mut Process) {
 }
 
 pub fn sys_exit(proc: &mut Process) {
-    unsafe { debug!("exit") };
+    log::debug!("exit");
     let xstatus = proc.trapframe.a0;
     proc.kexit(xstatus as u32);
 }
@@ -165,7 +165,7 @@ pub fn sys_set_tid_address(proc: &mut Process) {
 }
 
 pub fn sys_mmap(proc: &mut Process) {
-    println!(
+    log::logln!(
         "mmap: addr={:#x} len={:#x} prot={:#x} flags={:#x} fd={} off={:#x}",
         proc.trapframe.a0,
         proc.trapframe.a1,

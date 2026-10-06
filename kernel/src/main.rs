@@ -5,14 +5,14 @@
 
 pub mod allocator;
 mod csr;
+mod drivers;
 mod kernel;
 pub mod lock;
+mod log;
 mod process;
 pub mod structures;
 mod trap;
-pub mod uart;
 pub mod virtmemory;
-mod drivers;
 
 extern crate alloc;
 use alloc::string::String;
@@ -58,56 +58,6 @@ global_asm!(
     "
 );
 
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {{
-        $crate::uart::UART_DRIVER.write(alloc::format!($($arg)*).as_bytes());
-    }};
-}
-
-#[macro_export]
-macro_rules! println {
-    () => {{
-        $crate::uart::uart_write(b"\n");
-    }};
-    ($($arg:tt)*) => {{
-        $crate::uart::UART_DRIVER.write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
-    }};
-}
-
-static mut DEBUG: bool = false;
-
-#[macro_export]
-macro_rules! debug {
-    () => {{
-        if $crate::DEBUG {
-            $crate::uart::uart_write(b"\n");
-        }
-    }};
-    ($($arg:tt)*) => {{
-            if $crate::DEBUG {
-                $crate::uart::UART_DRIVER.write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
-            }
-    }};
-}
-
-/// Safe to call from trap/interrupt handlers: uses a stack buffer, no heap, no mutex.
-#[macro_export]
-macro_rules! kprint {
-    ($($arg:tt)*) => {{
-        use core::fmt::Write;
-        let mut w = $crate::uart::StackFormatter::new();
-        let _ = core::write!(w, $($arg)*);
-        w.flush();
-    }};
-}
-
-#[macro_export]
-macro_rules! kprintln {
-    () => { $crate::kprint!("\n") };
-    ($($arg:tt)*) => {{ $crate::kprint!($($arg)*); $crate::kprint!("\n"); }};
-}
-
 // FIX: Stack guard pages don't work,
 // stack-overflow causes infinite trapping.
 
@@ -128,16 +78,14 @@ pub extern "C" fn main() -> ! {
             .init(ekernel, RAMEND as usize - ekernel);
     }
 
-    unsafe {
-        DEBUG = false;
-    }
+    log::enable(log::INFO);
 
     init_trap();
     KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
     {
         let mut kernel = KERNEL.get().unwrap().lock();
 
-        unsafe { debug!("Hello world\n") };
+        log::info!("Hello world");
 
         kernel.init().expect("Kernel init fail");
 
@@ -147,23 +95,21 @@ pub extern "C" fn main() -> ! {
             .as_mut()
             .expect("KVM not initialized")
             .start_kvm();
-        unsafe { debug!("Virt started\n") };
+        log::info!("Virt started");
 
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
-        user_p0
-            .kexec(String::from("init"), vec![])
-            .unwrap();
+        user_p0.kexec(String::from("init"), vec![]).unwrap();
         user_p0.state = process::ProcState::Runnable;
     }
-    // debug!("into the schedulervere");
+    log::info!("into the schedulervere");
     process::scheduler();
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    print!("Something went wrong. {:?}\n", info);
+    log::logln!("Something went wrong. {:?}", info);
     // shutdown qemu
     unsafe {
         write_volatile(0x100000 as *mut u32, 0x5555);

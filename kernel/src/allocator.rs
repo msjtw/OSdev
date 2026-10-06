@@ -7,7 +7,6 @@ use core::alloc::Layout;
 use core::ops::Deref;
 use core::ptr::NonNull;
 
-use crate::debug;
 use crate::lock::IntMutex;
 use alloc::alloc::{AllocError, Allocator};
 
@@ -49,9 +48,6 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
             let ptr_non = NonNull::new(ptr).unwrap();
-            if ptr == 0x80235000 as *mut u8 {
-                debug!("im in");
-            }
             self.0.lock().dealloc(ptr_non, layout);
         }
     }

@@ -4,12 +4,11 @@ use core::arch::naked_asm;
 
 use crate::{
     csr::SSTATUS_SPP,
-    debug,
+    log,
     kernel::syscall::syscall,
-    kprintln,
     process::{Process, prepare_return},
     read_csr, read_csr64,
-    uart::UART_DRIVER,
+    drivers::uart::UART_DRIVER,
     write_csr, write_csr64,
 };
 
@@ -142,7 +141,7 @@ extern "C" fn kerneltrap() {
             pid = (*crate::CPU.current).pid;
         }
 
-        debug!(
+        log::trace!(
             ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}",
             pid, sepc, sstatus, scause, stval,
         );
@@ -158,7 +157,7 @@ extern "C" fn kerneltrap() {
         match scause {
             0x80000005 => timer(proc),
             _ => {
-                kprintln!(
+                log::logln!(
                     "kernel trap: pid={:?} scause=0x{:x} stval=0x{:x} sepc=0x{:x}",
                     pid,
                     scause,
@@ -194,12 +193,12 @@ pub extern "C" fn usertrap() -> usize {
             panic!("usertrap: interrupts enabled");
         }
 
-        debug!(
+        log::trace!(
             "user>pid {:?} TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}",
             proc.pid, sepc, sstatus, scause
         );
-        debug!("user> interrupt: {}", interrupt_read());
-        debug!("user> sched locks {}", (crate::CPU).interrupt_off_stack);
+        log::debug!("user> interrupt: {}", interrupt_read());
+        log::debug!("user> sched locks {}", (crate::CPU).interrupt_off_stack);
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;

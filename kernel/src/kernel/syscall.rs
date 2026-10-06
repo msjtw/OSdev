@@ -6,7 +6,7 @@ use crate::{
         sys_file::{sys_close, sys_dup, sys_dup3, sys_ioctl, sys_pipe2, sys_read, sys_write, sys_writev},
         sys_proc::*,
     },
-    print,
+    log,
     process::Process,
 };
 
@@ -59,7 +59,7 @@ pub fn syscall(proc: &mut Process) {
         SYS_MMAP => sys_mmap(proc),
         // Return -ENOSYS for unsupported calls instead of crashing the kernel.
         _ => {
-            print!("unimplemented syscall: {}\n", sys_num);
+            log::logln!("unimplemented syscall: {}", sys_num);
             proc.trapframe.a0 = (-38isize) as usize;
         }
     }
