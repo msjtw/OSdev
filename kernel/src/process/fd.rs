@@ -1,6 +1,6 @@
 use alloc::{sync::Arc, vec::Vec};
 
-use crate::{lock::IntMutex, process::Process, uart::UART_TERMINAL};
+use crate::{lock::IntMutex, process::Process};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
@@ -69,19 +69,21 @@ pub type SharedFdTable = Arc<IntMutex<FdTable>>;
 pub const MAX_FDS: usize = 64;
 
 pub fn standard_fds() -> FdTable {
+    let tty: Arc<dyn FileOps> = Arc::new(super::tty::TTY::new());
+
     alloc::vec![
         Some(Arc::new(FileDescription::new(
-            FileTarget::Static(&UART_TERMINAL),
+            FileTarget::Shared(Arc::clone(&tty)),
             true,
             false
         ))),
         Some(Arc::new(FileDescription::new(
-            FileTarget::Static(&UART_TERMINAL),
+            FileTarget::Shared(Arc::clone(&tty)),
             false,
             true
         ))),
         Some(Arc::new(FileDescription::new(
-            FileTarget::Static(&UART_TERMINAL),
+            FileTarget::Shared(tty),
             false,
             true
         ))),

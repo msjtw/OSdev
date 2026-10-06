@@ -1,4 +1,5 @@
 mod elf;
+mod tty;
 pub mod pipe;
 pub mod fd;
 pub mod trapframe;
@@ -17,7 +18,6 @@ use crate::{
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
-    println,
     process::trapframe::Trapframe,
     read_csr,
     trap::{

@@ -4,6 +4,7 @@
 
 int main(void) {
     for (int i = 1;; i++) {
+        char input[32];
         int pid;
 
         printf("pipe cleanup test %d\n", i);
@@ -21,5 +22,13 @@ int main(void) {
         }
 
         wait(NULL);
+
+        printf("init: type a word for stdin test: ");
+        fflush(stdout);
+        if (scanf("%31s", input) != 1) {
+            fprintf(stderr, "init: stdin read failed\n");
+            return 1;
+        }
+        printf("init: read \"%s\" from stdin\n", input);
     }
 }

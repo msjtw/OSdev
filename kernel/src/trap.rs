@@ -8,7 +8,9 @@ use crate::{
     kernel::syscall::syscall,
     kprintln,
     process::{Process, prepare_return},
-    read_csr, read_csr64, write_csr, write_csr64,
+    read_csr, read_csr64,
+    uart::UART_DRIVER,
+    write_csr, write_csr64,
 };
 
 const SIE_SEIE: usize = 1 << 9;
@@ -237,7 +239,7 @@ unsafe fn timer(proc: Option<&mut Process>) {
         write_csr64!(stimecmp, next);
 
         // poll uart on timer
-        crate::uart::uart_input_poll();
+        UART_DRIVER.poll_input();
 
         if let Some(proc) = proc {
             proc.yeld();

@@ -60,7 +60,7 @@ global_asm!(
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {{
-        $crate::uart::uart_write(alloc::format!($($arg)*).as_bytes());
+        $crate::uart::UART_DRIVER.write(alloc::format!($($arg)*).as_bytes());
     }};
 }
 
@@ -70,7 +70,7 @@ macro_rules! println {
         $crate::uart::uart_write(b"\n");
     }};
     ($($arg:tt)*) => {{
-        $crate::uart::uart_write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
+        $crate::uart::UART_DRIVER.write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
     }};
 }
 
@@ -85,7 +85,7 @@ macro_rules! debug {
     }};
     ($($arg:tt)*) => {{
             if $crate::DEBUG {
-                $crate::uart::uart_write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
+                $crate::uart::UART_DRIVER.write(alloc::format!("{}\n", alloc::format!($($arg)*)).as_bytes());
             }
     }};
 }

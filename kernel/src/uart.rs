@@ -1,12 +1,14 @@
 use core::ptr::{read_volatile, write_volatile};
 
+use alloc::vec::Vec;
+
 use crate::{
     KERNEL,
     kernel::STDIN_CHANNEL,
     lock::IntMutex,
-    process::{ProcState, Process, fd::{Errno, FileOps}},
+    process::{ProcState, Process},
     structures::RingBuffer,
-    virtmemory::{UART, copy_in_cont, copy_out_cont},
+    virtmemory::UART,
 };
 
 pub const INPUT_QUEUE_CAPACITY: usize = 256;
@@ -15,14 +17,14 @@ const UART_RHR: usize = 0;
 const UART_LSR: usize = 5;
 const UART_LSR_DATA_READY: u8 = 1 << 0;
 
-#[derive(Debug)]
-pub struct UartTerminal {
+pub static UART_DRIVER: UartDriver = UartDriver::new();
+
+#[derive(Debug, Default)]
+pub struct UartDriver {
     input: IntMutex<RingBuffer<INPUT_QUEUE_CAPACITY>>,
 }
 
-pub static UART_TERMINAL: UartTerminal = UartTerminal::new();
-
-impl UartTerminal {
+impl UartDriver {
     pub const fn new() -> Self {
         Self {
             input: IntMutex::new(RingBuffer::new()),
@@ -45,87 +47,58 @@ impl UartTerminal {
         }
 
         if received {
-            KERNEL.get().unwrap().lock().wakeup(Some(STDIN_CHANNEL), false);
+            KERNEL
+                .get()
+                .unwrap()
+                .lock()
+                .wakeup(Some(STDIN_CHANNEL), false);
         }
     }
-}
 
-impl FileOps for UartTerminal {
-    fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
-        if len == 0 {
-            return Ok(0);
-        }
-
-        let mut bytes = [0u8; INPUT_QUEUE_CAPACITY];
-
+    /// Return available input, sleeping until at least one byte arrives.
+    ///
+    /// The empty check and sleeping-state transition occur under the input
+    /// lock. This prevents timer polling from adding input between them and
+    /// losing the corresponding wakeup.
+    pub fn read_blocking(&self, proc: &mut Process, len: usize) -> Vec<u8> {
         loop {
-            let mut count = 0;
-            let mut sleeping = false;
+            let mut bytes = Vec::new();
+            let sleeping;
 
             {
-                // Keep queue consumption and publication of the sleeping
-                // state atomic with respect to timer-side UART polling.
                 let mut input = self.input.lock();
-                let requested = len.min(bytes.len());
-                while count < requested {
+                let requested = len.min(INPUT_QUEUE_CAPACITY);
+                while bytes.len() < requested {
                     let Some(byte) = input.pop() else {
                         break;
                     };
-                    bytes[count] = byte;
-                    count += 1;
+                    bytes.push(byte);
                 }
 
-                if count == 0 {
+                sleeping = bytes.is_empty();
+                if sleeping {
                     unsafe { proc.lock.lock_manual() };
                     proc.sleep_channel = Some(STDIN_CHANNEL);
                     proc.state = ProcState::Sleeping;
-                    sleeping = true;
                 }
             }
 
-            if count != 0 {
-                return copy_out_cont(&mut proc.pagetable, addr, &bytes[..count])
-                    .map(|()| count)
-                    .map_err(|()| Errno::Fault);
+            if !sleeping {
+                return bytes;
             }
 
-            if sleeping {
-                unsafe { proc.sleep_locked() };
-            }
+            // The UART input lock has dropped, so timer polling can enqueue
+            // input and wake this process while it is scheduled out.
+            unsafe { proc.sleep_locked() };
         }
     }
 
-    fn write(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
-        let bytes = copy_in_cont(&mut proc.pagetable, addr, len).map_err(|()| Errno::Fault)?;
-        uart_write(&bytes);
-        Ok(bytes.len())
-    }
-
-    fn ioctl(&self, proc: &mut Process, op: usize, arg: usize) -> Result<usize, Errno> {
-        const TIOCGWINSZ: usize = 0x5413;
-        if op != TIOCGWINSZ {
-            return Err(Errno::NotATerminal);
+    pub fn write(&self, bytes: &[u8]) {
+        let uart = UART as *mut u8;
+        for &byte in bytes {
+            unsafe { write_volatile(uart, byte) };
         }
-
-        // struct winsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; }
-        let mut winsize = [0u8; 8];
-        winsize[0..2].copy_from_slice(&24u16.to_ne_bytes());
-        winsize[2..4].copy_from_slice(&80u16.to_ne_bytes());
-        copy_out_cont(&mut proc.pagetable, arg, &winsize)
-            .map(|()| 0)
-            .map_err(|()| Errno::Fault)
     }
-}
-
-pub fn uart_write(bytes: &[u8]) {
-    let uart = UART as *mut u8;
-    for &byte in bytes {
-        unsafe { write_volatile(uart, byte) };
-    }
-}
-
-pub fn uart_input_poll() {
-    UART_TERMINAL.poll_input();
 }
 
 // Stack-allocated writer for use in trap/interrupt context where heap
