@@ -1,8 +1,21 @@
 #include <stdio.h>
+#include <termios.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
 int main(void) {
+    struct termios termios;
+
+    if (tcgetattr(STDIN_FILENO, &termios) < 0) {
+        fprintf(stderr, "init: tcgetattr failed\n");
+        return 1;
+    }
+    termios.c_lflag |= ECHO;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &termios) < 0) {
+        fprintf(stderr, "init: tcsetattr failed\n");
+        return 1;
+    }
+
     for (int i = 1;; i++) {
         char input[32];
         int pid;

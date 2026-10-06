@@ -95,7 +95,7 @@ macro_rules! debug {
 macro_rules! kprint {
     ($($arg:tt)*) => {{
         use core::fmt::Write;
-        let mut w = $crate::uart::UartWriter::new();
+        let mut w = $crate::uart::StackFormatter::new();
         let _ = core::write!(w, $($arg)*);
         w.flush();
     }};
