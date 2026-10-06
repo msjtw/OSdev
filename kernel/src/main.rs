@@ -12,6 +12,7 @@ pub mod structures;
 mod trap;
 pub mod uart;
 pub mod virtmemory;
+mod drivers;
 
 extern crate alloc;
 use alloc::string::String;

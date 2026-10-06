@@ -3,7 +3,10 @@ use alloc::{boxed::Box, sync::Arc};
 use crate::{
     KERNEL,
     lock::IntMutex,
-    process::{ProcState, Process, fd::{Errno, FileDescription, FileOps, FileTarget}},
+    process::{
+        ProcState, Process,
+        fd::{Errno, FileDescription, FileOps},
+    },
     structures::RingBuffer,
     virtmemory::{copy_in_cont, copy_out_cont},
 };
@@ -110,7 +113,8 @@ impl FileOps for PipeWriteEnd {
         }
 
         let requested = len.min(PIPE_IO_CHUNK);
-        let bytes = copy_in_cont(&mut proc.pagetable, addr, requested).map_err(|()| Errno::Fault)?;
+        let bytes =
+            copy_in_cont(&mut proc.pagetable, addr, requested).map_err(|()| Errno::Fault)?;
 
         loop {
             let mut written = 0;
@@ -177,8 +181,6 @@ impl Drop for PipeWriteEnd {
 }
 
 pub fn new_pipe() -> (Arc<FileDescription>, Arc<FileDescription>) {
-    // Construct the 4 KiB ring directly in heap storage. Constructing it as a
-    // temporary value first overflows the small per-process kernel stack.
     let mut buffer = Box::<RingBuffer<PIPE_CAPACITY>>::new_uninit();
     unsafe {
         core::ptr::write_bytes(buffer.as_mut_ptr(), 0, 1);
@@ -197,15 +199,7 @@ pub fn new_pipe() -> (Arc<FileDescription>, Arc<FileDescription>) {
     let write_target: Arc<dyn FileOps> = Arc::new(PipeWriteEnd { state });
 
     (
-        Arc::new(FileDescription::new(
-            FileTarget::Shared(read_target),
-            true,
-            false,
-        )),
-        Arc::new(FileDescription::new(
-            FileTarget::Shared(write_target),
-            false,
-            true,
-        )),
+        Arc::new(FileDescription::new(read_target, true, false)),
+        Arc::new(FileDescription::new(write_target, false, true)),
     )
 }

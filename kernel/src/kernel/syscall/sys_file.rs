@@ -183,7 +183,7 @@ pub fn sys_read(proc: &mut Process) {
             return;
         }
     };
-    proc.trapframe.a0 = match ops.target.ops().read(proc, addr, size) {
+    proc.trapframe.a0 = match ops.target.read(proc, addr, size) {
         Ok(count) => count,
         Err(error) => fd_error(error),
     };
@@ -201,13 +201,12 @@ pub fn sys_write(proc: &mut Process) {
             return;
         }
     };
-    proc.trapframe.a0 = match ops.target.ops().write(proc, addr, size) {
+    proc.trapframe.a0 = match ops.target.write(proc, addr, size) {
         Ok(count) => count,
         Err(error) => fd_error(error),
     };
 }
 
-/// Linux RISC-V writev for the UART-backed stdout descriptor.
 pub fn sys_writev(proc: &mut Process) {
     let fd = proc.trapframe.a0;
     let mut iov_addr = proc.trapframe.a1;
@@ -259,7 +258,7 @@ pub fn sys_writev(proc: &mut Process) {
                     return;
                 }
             };
-            match ops.target.ops().write(proc, addr, chunk_len) {
+            match ops.target.write(proc, addr, chunk_len) {
                 Ok(count) => {
                     let Some(total) = written.checked_add(count) else {
                         proc.trapframe.a0 = fd_error(Errno::InvalidArgument);
@@ -311,7 +310,7 @@ pub fn sys_ioctl(proc: &mut Process) {
             return;
         }
     };
-    proc.trapframe.a0 = match ops.target.ops().ioctl(proc, op, arg) {
+    proc.trapframe.a0 = match ops.target.ioctl(proc, op, arg) {
         Ok(result) => result,
         Err(error) => fd_error(error),
     };

@@ -34,13 +34,13 @@ pub trait FileOps: core::fmt::Debug + Send + Sync {
 
 #[derive(Debug)]
 pub struct FileDescription {
-    pub target: FileTarget,
+    pub target: Arc<dyn FileOps>,
     pub readable: bool,
     pub writable: bool,
 }
 
 impl FileDescription {
-    pub fn new(target: FileTarget, readable: bool, writable: bool) -> Self {
+    pub fn new(target: Arc<dyn FileOps>, readable: bool, writable: bool) -> Self {
         Self {
             target,
             readable,
@@ -49,20 +49,6 @@ impl FileDescription {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum FileTarget {
-    Static(&'static dyn FileOps),
-    Shared(Arc<dyn FileOps>),
-}
-
-impl FileTarget {
-    pub fn ops(&self) -> &dyn FileOps {
-        match self {
-            Self::Static(ops) => *ops,
-            Self::Shared(ops) => ops.as_ref(),
-        }
-    }
-}
 
 pub type FdTable = Vec<Option<Arc<FileDescription>>>;
 pub type SharedFdTable = Arc<IntMutex<FdTable>>;
@@ -73,17 +59,17 @@ pub fn standard_fds() -> FdTable {
 
     alloc::vec![
         Some(Arc::new(FileDescription::new(
-            FileTarget::Shared(Arc::clone(&tty)),
+            Arc::clone(&tty),
             true,
             false
         ))),
         Some(Arc::new(FileDescription::new(
-            FileTarget::Shared(Arc::clone(&tty)),
+            Arc::clone(&tty),
             false,
             true
         ))),
         Some(Arc::new(FileDescription::new(
-            FileTarget::Shared(tty),
+            tty,
             false,
             true
         ))),
