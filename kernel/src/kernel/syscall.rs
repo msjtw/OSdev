@@ -27,7 +27,6 @@ pub const SYS_RT_SIGPROCMASK: usize = 135;
 pub const SYS_GETTID: usize = 178;
 pub const SYS_CLONE: usize = 220;
 pub const SYS_EXECVE: usize = 221;
-pub const SYS_MMAP: usize = 222;
 
 // NOTE:
 // syscall number: a7
@@ -56,7 +55,6 @@ pub fn syscall(proc: &mut Process) {
         SYS_EXIT => sys_exit(proc),
         SYS_EXIT_GROUP => sys_exit(proc),
         SYS_GETTID => sys_gettid(proc),
-        SYS_MMAP => sys_mmap(proc),
         // Return -ENOSYS for unsupported calls instead of crashing the kernel.
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);

@@ -24,7 +24,8 @@ UPROGS = \
 	_init \
 	_hello \
 	_pipe1 \
-	_pipe2
+	_pipe2 \
+	_fork_prime
 
 all: $(UPROGS)
 

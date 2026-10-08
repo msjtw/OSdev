@@ -31,6 +31,7 @@ const PRIME: &[u8] = include_bytes!("../../user/_prime");
 const INIT: &[u8] = include_bytes!("../../user/_init");
 const PIPE1: &[u8] = include_bytes!("../../user/_pipe1");
 const PIPE2: &[u8] = include_bytes!("../../user/_pipe2");
+const FORK_PRIME: &[u8] = include_bytes!("../../user/_fork_prime");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -99,7 +100,7 @@ pub extern "C" fn main() -> ! {
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
-        user_p0.kexec(String::from("init"), vec![]).unwrap();
+        user_p0.kexec(String::from("fork_prime"), vec![]).unwrap();
         user_p0.state = process::ProcState::Runnable;
     }
     log::info!("into the schedulervere");

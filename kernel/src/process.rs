@@ -14,7 +14,7 @@ use core::{
 use alloc::boxed::Box;
 
 use crate::{
-    FRAME_ALLOCATOR, KERNEL,
+    FRAME_ALLOCATOR, KERNEL, log,
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
@@ -33,12 +33,6 @@ use crate::{
 // Normaly (in c) 1 page stack for kernel is more than enough.
 // But this is rust and fmt (format!) allocates shitload on stack.
 pub const KERNEL_STACK_PAGES: usize = 4;
-
-/// A vfork wait channel is distinct from the parent-PID channels used by wait.
-/// PIDs begin at one, so this can never equal the stdin channel (`usize::MAX`).
-pub const fn vfork_channel(pid: usize) -> usize {
-    usize::MAX - pid
-}
 
 #[macro_export]
 macro_rules! KSTACK {
@@ -65,6 +59,48 @@ pub enum ProcState {
 pub enum ForkError {
     NoProcess,
     Fault,
+    InvalidArgument,
+}
+
+struct ForkParams {
+    share_files: bool,
+    parent_tid: Option<usize>,
+    child_tid: Option<usize>,
+}
+
+fn fork_param_parse(
+    flags: usize,
+    stack: usize,
+    parent_tid: usize,
+    tls: usize,
+    child_tid: usize,
+) -> Result<ForkParams, ForkError> {
+    const SIGCHLD: usize = 17;
+    const CSIGNAL_MASK: usize = 0xff;
+
+    const CLONE_FILES: usize = 0x0000_0400;
+    const CLONE_PARENT_SETTID: usize = 0x0010_0000;
+    const CLONE_CHILD_SETTID: usize = 0x0100_0000;
+
+    let signal = flags & CSIGNAL_MASK;
+    let clone_flags = flags & !CSIGNAL_MASK;
+    if signal != SIGCHLD
+        || clone_flags & !(CLONE_FILES | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID)
+            != 0
+        || stack != 0
+        || (parent_tid != 0 && clone_flags & CLONE_PARENT_SETTID == 0)
+    {
+        log::logln!(
+            "clone: unsupported options flags={flags:#x} stack={stack:#x} parent_tid={parent_tid:#x} tls={tls:#x} child_tid={child_tid:#x}",
+        );
+        return Err(ForkError::InvalidArgument);
+    }
+
+    Ok(ForkParams {
+        share_files: clone_flags & CLONE_FILES != 0,
+        parent_tid: (clone_flags & CLONE_PARENT_SETTID != 0).then_some(parent_tid),
+        child_tid: (clone_flags & CLONE_CHILD_SETTID != 0).then_some(child_tid),
+    })
 }
 
 #[repr(C)]
@@ -122,7 +158,6 @@ pub struct Process {
     pub context: Context,
     pub xstatus: u32,
     pub sleep_channel: Option<usize>,
-    pub vfork_channel: Option<usize>,
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
@@ -143,7 +178,6 @@ impl Process {
             context: Context::default(),
             xstatus: 0,
             sleep_channel: None,
-            vfork_channel: None,
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
@@ -159,7 +193,6 @@ impl Process {
         self.context = Context::default();
         self.xstatus = 0;
         self.sleep_channel = None;
-        self.vfork_channel = None;
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
         self.fds = fd::FdTable::new();
 
@@ -183,38 +216,35 @@ impl Process {
         unsafe { self.lock.unlock_manual() };
     }
 
-    /// Wake a parent blocked by CLONE_VFORK after this process has execed or
-    /// is about to exit.
-    pub fn release_vfork_parent(&mut self) {
-        let Some(channel) = self.vfork_channel.take() else {
-            return;
-        };
-        KERNEL.get().unwrap().lock().wakeup(Some(channel), false);
-    }
-
     pub fn kfork(
         &mut self,
-        share_files: bool,
-        vfork: bool,
-        parent_tid: Option<usize>,
-        child_tid: Option<usize>,
+        flags: usize,
+        stack: usize,
+        parent_tid: usize,
+        tls: usize,
+        child_tid: usize,
     ) -> Result<usize, ForkError> {
-        // FdTable is currently process-owned. Supporting CLONE_FILES requires
-        // shared ownership of the table, so both forms currently clone it.
-        let _ = share_files;
-        let fds = self.fds.clone();
+        let ForkParams {
+            share_files,
+            parent_tid,
+            child_tid,
+        } = fork_param_parse(flags, stack, parent_tid, tls, child_tid)?;
 
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(ForkError::NoProcess)?;
         child_proc.trapframe = Box::new_in((*self.trapframe).clone(), &FRAME_ALLOCATOR);
-        child_proc.fds = fds;
         let child_pid = child_proc.pid.ok_or(ForkError::NoProcess)?;
-        child_proc.vfork_channel = vfork.then(|| vfork_channel(child_pid));
 
         let mut uvm = self.pagetable.clone();
         uvm.init_proc(child_proc)
             .map_err(|()| ForkError::NoProcess)?;
         child_proc.pagetable = uvm;
+
+        // FdTable is currently process-owned. Supporting CLONE_FILES requires
+        // shared ownership of the table, so both forms currently clone it.
+        let _ = share_files;
+        let fds = self.fds.clone();
+        child_proc.fds = fds;
 
         let pid_bytes = (child_pid as u32).to_ne_bytes();
         if let Some(addr) = child_tid {
@@ -241,14 +271,6 @@ impl Process {
         // NOTE: not sure if it's ok
         child_proc.parent = self.pid;
 
-        if vfork {
-            // Publish the parent sleep state before the child can become
-            // runnable. Keep this lock held until sys_clone schedules out.
-            unsafe { self.lock.lock_manual() };
-            self.sleep_channel = Some(vfork_channel(child_pid));
-            self.state = ProcState::Sleeping;
-        }
-
         unsafe { child_proc.lock.lock_manual() };
         child_proc.state = ProcState::Runnable;
         unsafe { child_proc.lock.unlock_manual() };
@@ -265,6 +287,7 @@ impl Process {
             "prime" => crate::PRIME,
             "pipe1" => crate::PIPE1,
             "pipe2" => crate::PIPE2,
+            "fork_prime" => crate::FORK_PRIME,
             _ => return Err(()),
         };
 
@@ -510,8 +533,6 @@ impl Process {
         if self.pid == Some(0) {
             panic!("init exit");
         }
-
-        self.release_vfork_parent();
 
         // TODO: close all open files
         {

@@ -1,6 +1,6 @@
 use alloc::{sync::Arc, vec::Vec};
 
-use crate::{process::Process};
+use crate::process::Process;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
@@ -10,12 +10,18 @@ pub enum Errno {
     ENOTTY,
     EPIPE,
     EMFILE,
+    EAGAIN,
+    ENOENT,
+    ECHILD,
 }
 
 impl Into<usize> for Errno {
     fn into(self) -> usize {
         let code = match self {
-            Self::EBADF => 9,  // Bad file descriptor.
+            Self::ENOENT => 2,
+            Self::EBADF => 9, // Bad file descriptor.
+            Self::ECHILD => 10,
+            Self::EAGAIN => 11,
             Self::EFAULT => 14, // Bad address.
             Self::EINVAL => 22, // Invalid argument.
             Self::EMFILE => 24, // Too many open files.
@@ -43,7 +49,6 @@ pub const MAX_FDS: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct FdTable(Vec<Option<Arc<FileDescriptor>>>);
-
 
 impl FdTable {
     pub fn new() -> Self {
