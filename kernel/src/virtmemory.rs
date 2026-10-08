@@ -8,8 +8,7 @@ use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, HEAP_ALLOCATOR, log,
-    process::{Process, trapframe::Trapframe},
-    trap::trampoline::_trampoline,
+    process::{Process, trap::{trapframe::Trapframe, trampoline::_trampoline}},
     write_csr,
 };
 

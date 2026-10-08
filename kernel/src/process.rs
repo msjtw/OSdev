@@ -1,8 +1,8 @@
 mod elf;
-mod tty;
-pub mod pipe;
 pub mod fd;
-pub mod trapframe;
+pub mod pipe;
+pub mod trap;
+mod tty;
 
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -18,13 +18,13 @@ use crate::{
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
-    process::trapframe::Trapframe,
-    read_csr,
-    trap::{
+    process::trap::trapframe::Trapframe,
+    process::trap::{
         interrupt_off, interrupt_on, interrupt_read,
         trampoline::{_trampoline, userret, uservec},
         usertrap,
     },
+    read_csr,
     virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
     write_csr,
 };
@@ -128,7 +128,7 @@ pub struct Process {
     pub quants: usize,
     // Linux leaves slots after close, so a table entry becomes None while its
     // index remains a valid descriptor number for later reuse.
-    pub fds: fd::SharedFdTable,
+    pub fds: fd::FdTable,
 }
 
 impl Process {
@@ -147,7 +147,7 @@ impl Process {
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
-            fds: fd::new_standard_fds(),
+            fds: fd::FdTable::new(),
         })
     }
 
@@ -161,12 +161,10 @@ impl Process {
         self.sleep_channel = None;
         self.vfork_channel = None;
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
-        self.fds = fd::new_standard_fds();
+        self.fds = fd::FdTable::new();
 
         Ok(())
     }
-
-    // fn free(&mut self) {}
 
     // NOTE: because yield is a keyword
     pub fn yeld(&mut self) {
@@ -201,11 +199,10 @@ impl Process {
         parent_tid: Option<usize>,
         child_tid: Option<usize>,
     ) -> Result<usize, ForkError> {
-        let fds = if share_files {
-            self.fds.clone()
-        } else {
-            alloc::sync::Arc::new(IntMutex::new(self.fds.lock().clone()))
-        };
+        // FdTable is currently process-owned. Supporting CLONE_FILES requires
+        // shared ownership of the table, so both forms currently clone it.
+        let _ = share_files;
+        let fds = self.fds.clone();
 
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(ForkError::NoProcess)?;
@@ -215,7 +212,8 @@ impl Process {
         child_proc.vfork_channel = vfork.then(|| vfork_channel(child_pid));
 
         let mut uvm = self.pagetable.clone();
-        uvm.init_proc(child_proc).map_err(|()| ForkError::NoProcess)?;
+        uvm.init_proc(child_proc)
+            .map_err(|()| ForkError::NoProcess)?;
         child_proc.pagetable = uvm;
 
         let pid_bytes = (child_pid as u32).to_ne_bytes();
@@ -359,7 +357,7 @@ impl Process {
             // Write terminating '\0'.
             copy_out_cont(&mut pagetree, sp + bytes.len(), &[0])?;
 
-            arg_ptrs.push(sp); 
+            arg_ptrs.push(sp);
         }
 
         // We copied arguments in reverse order.

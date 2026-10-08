@@ -5,7 +5,7 @@ use crate::{
     lock::IntMutex,
     process::{
         ProcState, Process,
-        fd::{Errno, FileDescription, FileOps},
+        fd::{Errno, FileDescriptor, FileOps},
     },
     structures::RingBuffer,
     virtmemory::{copy_in_cont, copy_out_cont},
@@ -81,7 +81,7 @@ impl FileOps for PipeReadEnd {
                 wake(write_channel(&self.state), false);
                 return copy_out_cont(&mut proc.pagetable, addr, &bytes[..count])
                     .map(|()| count)
-                    .map_err(|()| Errno::Fault);
+                    .map_err(|()| Errno::EFAULT);
             }
 
             if sleeping {
@@ -94,17 +94,17 @@ impl FileOps for PipeReadEnd {
     }
 
     fn write(&self, _proc: &mut Process, _addr: usize, _len: usize) -> Result<usize, Errno> {
-        Err(Errno::BadFileDescriptor)
+        Err(Errno::EBADF)
     }
 
     fn ioctl(&self, _proc: &mut Process, _op: usize, _arg: usize) -> Result<usize, Errno> {
-        Err(Errno::NotATerminal)
+        Err(Errno::ENOTTY)
     }
 }
 
 impl FileOps for PipeWriteEnd {
     fn read(&self, _proc: &mut Process, _addr: usize, _len: usize) -> Result<usize, Errno> {
-        Err(Errno::BadFileDescriptor)
+        Err(Errno::EBADF)
     }
 
     fn write(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
@@ -114,7 +114,7 @@ impl FileOps for PipeWriteEnd {
 
         let requested = len.min(PIPE_IO_CHUNK);
         let bytes =
-            copy_in_cont(&mut proc.pagetable, addr, requested).map_err(|()| Errno::Fault)?;
+            copy_in_cont(&mut proc.pagetable, addr, requested).map_err(|()| Errno::EFAULT)?;
 
         loop {
             let mut written = 0;
@@ -123,7 +123,7 @@ impl FileOps for PipeWriteEnd {
             {
                 let mut state = self.state.lock();
                 if state.readers == 0 {
-                    return Err(Errno::BrokenPipe);
+                    return Err(Errno::EPIPE);
                 }
 
                 while written < bytes.len() && state.buffer.push(bytes[written]) {
@@ -152,7 +152,7 @@ impl FileOps for PipeWriteEnd {
     }
 
     fn ioctl(&self, _proc: &mut Process, _op: usize, _arg: usize) -> Result<usize, Errno> {
-        Err(Errno::NotATerminal)
+        Err(Errno::ENOTTY)
     }
 }
 
@@ -180,7 +180,7 @@ impl Drop for PipeWriteEnd {
     }
 }
 
-pub fn new_pipe() -> (Arc<FileDescription>, Arc<FileDescription>) {
+pub fn new_pipe() -> (Arc<FileDescriptor>, Arc<FileDescriptor>) {
     let mut buffer = Box::<RingBuffer<PIPE_CAPACITY>>::new_uninit();
     unsafe {
         core::ptr::write_bytes(buffer.as_mut_ptr(), 0, 1);
@@ -199,7 +199,15 @@ pub fn new_pipe() -> (Arc<FileDescription>, Arc<FileDescription>) {
     let write_target: Arc<dyn FileOps> = Arc::new(PipeWriteEnd { state });
 
     (
-        Arc::new(FileDescription::new(read_target, true, false)),
-        Arc::new(FileDescription::new(write_target, false, true)),
+        Arc::new(FileDescriptor {
+            target: read_target,
+            readable: true,
+            writable: false,
+        }),
+        Arc::new(FileDescriptor {
+            target: write_target,
+            readable: false,
+            writable: true,
+        }),
     )
 }

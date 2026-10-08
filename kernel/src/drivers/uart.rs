@@ -55,11 +55,6 @@ impl UartDriver {
         }
     }
 
-    /// Return available input, sleeping until at least one byte arrives.
-    ///
-    /// The empty check and sleeping-state transition occur under the input
-    /// lock. This prevents timer polling from adding input between them and
-    /// losing the corresponding wakeup.
     pub fn read_blocking(&self, proc: &mut Process, len: usize) -> Vec<u8> {
         loop {
             let mut bytes = Vec::new();

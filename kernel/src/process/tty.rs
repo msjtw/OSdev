@@ -1,14 +1,19 @@
+use alloc::vec::Vec;
+
 use crate::{
+    drivers::uart::{UART_DRIVER, UartDriver},
     lock::IntMutex,
     process::{
         Process,
         fd::{Errno, FileOps},
-    }, drivers::uart::{UART_DRIVER, UartDriver}, virtmemory::{copy_in_cont, copy_out_cont},
+    },
+    virtmemory::{copy_in_cont, copy_out_cont},
 };
 
-// Linux RISC-V's kernel termios ABI, used by the TCGETS/TCSETS ioctls.
-// musl's public struct termios has additional userspace-only fields after
-// this prefix, so only this 36-byte kernel portion is copied by the ioctl.
+const ICRNL: u32 = 0o000400;
+const ECHO: u32 = 0o000010;
+const ICANON: u32 = 0o000002;
+
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 struct Termios {
@@ -23,6 +28,7 @@ struct Termios {
 #[derive(Debug)]
 pub(super) struct TTY {
     termios: IntMutex<Termios>,
+    buffer: Vec<u8>,
     transport: &'static UartDriver,
 }
 
@@ -30,6 +36,7 @@ impl TTY {
     pub(super) fn new() -> Self {
         Self {
             termios: IntMutex::new(Termios::default()),
+            buffer: Vec::new(),
             transport: &UART_DRIVER,
         }
     }
@@ -47,13 +54,12 @@ impl FileOps for TTY {
         }
 
         let bytes = self.transport.read_blocking(proc, len);
-        const ECHO: u32 = 0o10;
         if self.termios.lock().c_lflag & ECHO != 0 {
             self.transport.write(&bytes);
         }
         copy_out_cont(&mut proc.pagetable, addr, &bytes)
             .map(|()| bytes.len())
-            .map_err(|()| Errno::Fault)
+            .map_err(|()| Errno::EFAULT)
     }
 
     fn write(
@@ -62,7 +68,7 @@ impl FileOps for TTY {
         addr: usize,
         len: usize,
     ) -> Result<usize, super::fd::Errno> {
-        let bytes = copy_in_cont(&mut proc.pagetable, addr, len).map_err(|()| Errno::Fault)?;
+        let bytes = copy_in_cont(&mut proc.pagetable, addr, len).map_err(|()| Errno::EFAULT)?;
         self.transport.write(&bytes);
         Ok(bytes.len())
     }
@@ -83,16 +89,14 @@ impl FileOps for TTY {
                 };
                 copy_out_cont(&mut proc.pagetable, arg, bytes)
                     .map(|()| 0)
-                    .map_err(|()| Errno::Fault)
+                    .map_err(|()| Errno::EFAULT)
             }
             TCSETS => {
-                let bytes: alloc::vec::Vec<u8> = copy_in_cont(
-                    &mut proc.pagetable,
-                    arg,
-                    core::mem::size_of::<Termios>(),
-                )
-                    .map_err(|()| Errno::Fault)?;
-                let termios = unsafe { core::ptr::read_unaligned(bytes.as_ptr().cast::<Termios>()) };
+                let bytes: alloc::vec::Vec<u8> =
+                    copy_in_cont(&mut proc.pagetable, arg, core::mem::size_of::<Termios>())
+                        .map_err(|()| Errno::EFAULT)?;
+                let termios =
+                    unsafe { core::ptr::read_unaligned(bytes.as_ptr().cast::<Termios>()) };
                 *self.termios.lock() = termios;
                 Ok(0)
             }
@@ -103,9 +107,9 @@ impl FileOps for TTY {
                 winsize[2..4].copy_from_slice(&80u16.to_ne_bytes());
                 copy_out_cont(&mut proc.pagetable, arg, &winsize)
                     .map(|()| 0)
-                    .map_err(|()| Errno::Fault)
+                    .map_err(|()| Errno::EFAULT)
             }
-            _ => Err(Errno::NotATerminal),
+            _ => Err(Errno::ENOTTY),
         }
     }
 }

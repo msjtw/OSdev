@@ -1,4 +1,5 @@
 pub mod trampoline;
+pub mod trapframe;
 
 use core::arch::naked_asm;
 

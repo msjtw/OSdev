@@ -11,7 +11,6 @@ pub mod lock;
 mod log;
 mod process;
 pub mod structures;
-mod trap;
 pub mod virtmemory;
 
 extern crate alloc;
@@ -24,8 +23,8 @@ use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 
 use crate::kernel::{Cpu, Kernel};
-use crate::trap::init_trap;
-use crate::trap::trampoline::{userret, uservec};
+use crate::process::trap::init_trap;
+use crate::process::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
 const PRIME: &[u8] = include_bytes!("../../user/_prime");
