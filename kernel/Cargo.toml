@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 spin = "0.9"
 buddy_system_allocator = "0.12.0"
+ext4_rs = { git = "https://github.com/yuoo655/ext4_rs", rev = "066bc65689707ba87719ab8ad0657f06f51c4af9" }
 
 [profile.dev]
 panic = "abort"

@@ -1,5 +1,16 @@
 pub mod virtio_blk;
 
+use alloc::{boxed::Box, sync::Arc};
+
+use crate::{
+    drivers::virtio::transport::Mmio,
+    lock::IntMutex,
+};
+
+pub const VIRTIO_QUEUE_SIZE: usize = 8;
+pub type VirtioMmioBlock = virtio_blk::VirtioBlk<Mmio, VIRTIO_QUEUE_SIZE>;
+pub type SharedBlockDevice = Arc<IntMutex<Box<VirtioMmioBlock>>>;
+
 pub trait BlockDevice {
     type Error;
     
@@ -21,8 +32,8 @@ pub trait BlockDevice {
     fn flush(&mut self) -> Result<(), Self::Error>;
 }
 
-pub fn test() {
-    fn _test(base: usize) -> bool {
+pub fn discover() -> Option<SharedBlockDevice> {
+    fn probe(base: usize) -> Option<SharedBlockDevice> {
         unsafe fn mmio_read_u32(base: usize, off: usize) -> u32 {
             unsafe {
                 core::ptr::read_volatile((base + off) as *const u32)
@@ -38,18 +49,21 @@ pub fn test() {
 
         let magic = unsafe { mmio_read_u32(base, OFF_MAGIC) };
         if magic != TARGET_MAGIC {
-            return false;
+            return None;
         }
 
         let device_id = unsafe { mmio_read_u32(base, OFF_DEVICE_ID) };
         if device_id != TARGET_DEVICE_ID {
-            return false;
+            return None;
         }
 
-        log::uart_println!("BLOCK DEVICE AT BASE=0x{base:08x}");
-        log::uart_println!();
-        let blk = virtio_blk::test(base);
-        return true;
+        log::info!("virtio-blk: found block device at 0x{base:08x}");
+        let mut blk = Box::new(VirtioMmioBlock::new(base));
+        if blk.init().is_err() {
+            log::error!("virtio-blk: initialization failed at 0x{base:08x}");
+            return None;
+        }
+        Some(Arc::new(IntMutex::new(blk)))
     }
 
     let bases = [
@@ -63,7 +77,5 @@ pub fn test() {
         0x1000_8000,
     ];
 
-    for base in bases {
-       _test(base);
-    }
+    bases.into_iter().find_map(probe)
 }

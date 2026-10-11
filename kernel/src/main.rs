@@ -6,6 +6,7 @@
 pub mod allocator;
 mod csr;
 mod drivers;
+mod fs;
 mod kernel;
 pub mod lock;
 mod log;
@@ -27,11 +28,11 @@ use crate::process::trap::init_trap;
 use crate::process::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
-const PRIME: &[u8] = include_bytes!("../../user/_prime");
-const INIT: &[u8] = include_bytes!("../../user/_init");
-const PIPE1: &[u8] = include_bytes!("../../user/_pipe1");
-const PIPE2: &[u8] = include_bytes!("../../user/_pipe2");
-const FORK_PRIME: &[u8] = include_bytes!("../../user/_fork_prime");
+// const PRIME: &[u8] = include_bytes!("../../user/_prime");
+// const INIT: &[u8] = include_bytes!("../../user/_init");
+// const PIPE1: &[u8] = include_bytes!("../../user/_pipe1");
+// const PIPE2: &[u8] = include_bytes!("../../user/_pipe2");
+// const FORK_PRIME: &[u8] = include_bytes!("../../user/_fork_prime");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -78,7 +79,7 @@ pub extern "C" fn main() -> ! {
             .init(ekernel, RAMEND as usize - ekernel);
     }
 
-    log::enable(log::INFO);
+    log::enable(log::INFO | log::ERROR);
 
     init_trap();
     KERNEL.call_once(|| lock::IntMutex::new(Kernel::default()));
@@ -88,6 +89,7 @@ pub extern "C" fn main() -> ! {
         log::info!("Hello world");
 
         kernel.init().expect("Kernel init fail");
+        fs::mount_root().expect("ext4 root mount failed");
 
         kernel.initproc(4).unwrap();
         kernel
@@ -100,7 +102,9 @@ pub extern "C" fn main() -> ! {
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
-        user_p0.kexec(String::from("fork_prime"), vec![]).unwrap();
+        user_p0
+            .kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])
+            .expect("failed to execute /bin/busybox from ext4");
         user_p0.state = process::ProcState::Runnable;
     }
     log::info!("into the schedulervere");

@@ -14,10 +14,11 @@ use core::{
 use alloc::boxed::Box;
 
 use crate::{
-    FRAME_ALLOCATOR, KERNEL, log,
+    FRAME_ALLOCATOR, KERNEL,
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
+    log,
     process::trap::trapframe::Trapframe,
     process::trap::{
         interrupt_off, interrupt_on, interrupt_read,
@@ -25,7 +26,10 @@ use crate::{
         usertrap,
     },
     read_csr,
-    virtmemory::{self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_START, Uvm, copy_out_cont},
+    virtmemory::{
+        self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_STACK_PAGES, USER_STACK_TOP, Uvm,
+        copy_out_cont,
+    },
     write_csr,
 };
 
@@ -63,12 +67,11 @@ pub enum ForkError {
 }
 
 struct ForkParams {
-    share_files: bool,
     parent_tid: Option<usize>,
     child_tid: Option<usize>,
 }
 
-fn fork_param_parse(
+fn fork_param(
     flags: usize,
     stack: usize,
     parent_tid: usize,
@@ -78,15 +81,13 @@ fn fork_param_parse(
     const SIGCHLD: usize = 17;
     const CSIGNAL_MASK: usize = 0xff;
 
-    const CLONE_FILES: usize = 0x0000_0400;
     const CLONE_PARENT_SETTID: usize = 0x0010_0000;
     const CLONE_CHILD_SETTID: usize = 0x0100_0000;
 
     let signal = flags & CSIGNAL_MASK;
     let clone_flags = flags & !CSIGNAL_MASK;
     if signal != SIGCHLD
-        || clone_flags & !(CLONE_FILES | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID)
-            != 0
+        || clone_flags & !(CLONE_PARENT_SETTID | CLONE_CHILD_SETTID) != 0
         || stack != 0
         || (parent_tid != 0 && clone_flags & CLONE_PARENT_SETTID == 0)
     {
@@ -97,7 +98,6 @@ fn fork_param_parse(
     }
 
     Ok(ForkParams {
-        share_files: clone_flags & CLONE_FILES != 0,
         parent_tid: (clone_flags & CLONE_PARENT_SETTID != 0).then_some(parent_tid),
         child_tid: (clone_flags & CLONE_CHILD_SETTID != 0).then_some(child_tid),
     })
@@ -161,9 +161,11 @@ pub struct Process {
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
+
     // Linux leaves slots after close, so a table entry becomes None while its
     // index remains a valid descriptor number for later reuse.
     pub fds: fd::FdTable,
+    pub cwd: Option<String>,
 }
 
 impl Process {
@@ -182,6 +184,7 @@ impl Process {
             lock: IntMutex::new(()),
             quants: 0,
             fds: fd::FdTable::new(),
+            cwd: Some(String::from("/")),
         })
     }
 
@@ -225,11 +228,9 @@ impl Process {
         child_tid: usize,
     ) -> Result<usize, ForkError> {
         let ForkParams {
-            share_files,
             parent_tid,
             child_tid,
-        } = fork_param_parse(flags, stack, parent_tid, tls, child_tid)?;
-
+        } = fork_param(flags, stack, parent_tid, tls, child_tid)?;
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(ForkError::NoProcess)?;
         child_proc.trapframe = Box::new_in((*self.trapframe).clone(), &FRAME_ALLOCATOR);
@@ -242,9 +243,7 @@ impl Process {
 
         // FdTable is currently process-owned. Supporting CLONE_FILES requires
         // shared ownership of the table, so both forms currently clone it.
-        let _ = share_files;
-        let fds = self.fds.clone();
-        child_proc.fds = fds;
+        child_proc.fds = self.fds.clone();
 
         let pid_bytes = (child_pid as u32).to_ne_bytes();
         if let Some(addr) = child_tid {
@@ -279,17 +278,8 @@ impl Process {
     }
 
     pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), ()> {
-        // TODO: when file system is implemented, load from file.
-
-        let program = path.trim_end().rsplit('/').next().unwrap_or(path.as_str());
-        let img: &[u8] = match program {
-            "init" => crate::INIT,
-            "prime" => crate::PRIME,
-            "pipe1" => crate::PIPE1,
-            "pipe2" => crate::PIPE2,
-            "fork_prime" => crate::FORK_PRIME,
-            _ => return Err(()),
-        };
+        let img = crate::fs::read_file(&path)?;
+        let entry = elf::get_elf_entry(&img)?;
 
         let mut pagetree = Uvm::new()?;
         pagetree.init_proc(self)?;
@@ -298,21 +288,37 @@ impl Process {
         // Load ELF
         // ------------------------------------------------------------
 
-        for segment in elf::get_elf_segments(img)? {
+        let mut image_end = 0;
+        for segment in elf::get_elf_segments(&img)? {
             if segment.p_type != elf::PT_LOAD {
                 continue;
             }
 
-            pagetree.alloc(
-                segment.p_vaddr as usize,
-                segment.p_memsz as usize,
-                elf_flags_to_pte(segment.p_flags),
-            )?;
+            let segment_addr = segment.p_vaddr as usize;
+            let file_size = segment.p_filesz as usize;
+            let memory_size = segment.p_memsz as usize;
+            if file_size > memory_size {
+                return Err(());
+            }
 
-            pagetree.load(
-                segment.p_vaddr as usize,
-                elf::segment_bytes(img, &segment).unwrap(),
-            )?;
+            // ELF PT_LOAD virtual addresses need not be page aligned.  The
+            // ELF ABI instead requires their page offset to match p_offset.
+            // Map whole pages, then copy the file bytes at the exact virtual
+            // address so the leading page fragment is preserved.
+            let page_start = segment_addr & !(PAGESIZE - 1);
+            let page_offset = segment_addr - page_start;
+            let map_size = page_offset
+                .checked_add(memory_size)
+                .and_then(|size| size.checked_add(PAGESIZE - 1))
+                .map(|size| size & !(PAGESIZE - 1))
+                .ok_or(())?;
+
+            pagetree
+                .map(page_start, map_size, elf_flags_to_pte(segment.p_flags))
+                .map_err(|_| ())?;
+            image_end = image_end.max(page_start.checked_add(map_size).ok_or(())?);
+
+            pagetree.load(segment_addr, elf::segment_bytes(&img, &segment).ok_or(())?)?;
         }
 
         // ------------------------------------------------------------
@@ -323,26 +329,21 @@ impl Process {
         //             strings
         //             ...
         //
-        //             auxv
+        //             auxv[]
         //             envp[]
         //             argv[]
         //             argc
-        //             ^
-        //             |
-        //            sp
         //
         // ------------------------------------------------------------
 
-        // Guard page.
-        pagetree.alloc(pagetree.end, PAGESIZE, 0).unwrap();
+        let heap_base = image_end;
 
-        // One-page user stack.
+        // Create userstack just below trapframe
+        let stack_top = USER_STACK_TOP;
+        let stack_base = stack_top - USER_STACK_PAGES * PAGESIZE;
         pagetree
-            .alloc(pagetree.end, PAGESIZE, PTE_W | PTE_R)
-            .unwrap();
-
-        let stack_top = pagetree.end;
-        let stack_base = stack_top - PAGESIZE;
+            .map(stack_base, USER_STACK_PAGES * PAGESIZE, PTE_W | PTE_R)
+            .map_err(|_| ())?;
 
         let mut sp = stack_top;
 
@@ -420,12 +421,13 @@ impl Process {
         // argc
         // argv pointers + NULL
         // envp NULL
+        // AT_PAGESZ + value
         // AT_NULL + value
         //
         let stack_words = 1 +                 // argc
         (argc + 1) +        // argv + NULL
         1 +                 // envp NULL
-        2; // AT_NULL + 0
+        4; // AT_PAGESZ + value, AT_NULL + 0
 
         let stack_bytes = stack_words * size_of::<u32>();
 
@@ -483,13 +485,22 @@ impl Process {
         // ------------------------------------------------------------
         // auxv
         //
-        // Minimal valid auxiliary vector:
+        // Minimal auxiliary vector. musl uses AT_PAGESZ when calculating
+        // allocation sizes, so AT_NULL alone produces zero-length mmap calls.
         //
-        //     AT_NULL
-        //     0
+        //     AT_PAGESZ, page size
+        //     AT_NULL, 0
         //
-        // AT_NULL is type 0.
+        // AT_PAGESZ is type 6; AT_NULL is type 0.
         // ------------------------------------------------------------
+
+        copy_out_cont(&mut pagetree, p, &6u32.to_ne_bytes())?;
+
+        p += 4;
+
+        copy_out_cont(&mut pagetree, p, &(PAGESIZE as u32).to_ne_bytes())?;
+
+        p += 4;
 
         copy_out_cont(&mut pagetree, p, &0u32.to_ne_bytes())?;
 
@@ -514,6 +525,8 @@ impl Process {
         // ------------------------------------------------------------
 
         self.pagetable = pagetree;
+        self.pagetable.heap_base = heap_base;
+        self.pagetable.prog_break = heap_base;
 
         self.trapframe.sp = sp;
 
@@ -524,7 +537,7 @@ impl Process {
         self.trapframe.a0 = 0;
         self.trapframe.a1 = 0;
 
-        self.trapframe.epc = USER_START;
+        self.trapframe.epc = entry;
 
         Ok(())
     }
@@ -585,8 +598,6 @@ impl Process {
                 }
 
                 if zombie_pid.is_none() && has_kids {
-                    // Hold the parent lock while publishing sleep state so wakeup() cannot
-                    // race in between and be lost before we call sched().
                     let parent = table
                         .iter_mut()
                         .find(|proc| proc.pid == parent_pid)

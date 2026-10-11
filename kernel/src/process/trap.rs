@@ -16,17 +16,17 @@ use crate::{
 const SIE_SEIE: usize = 1 << 9;
 const SIE_STIE: usize = 1 << 5;
 const SSTATUS_SIE: usize = 1 << 1;
+const TIMER_INTERVAL: u64 = 1_000_000;
 
 pub fn init_trap() {
     unsafe {
         write_csr!(stvec, kernelvec as *const () as u32);
 
-        // NOTE: Request first timer interrupt.
-        // The sstc extension was enabled by openSBI
-
-        // Enable timer and external interrupts
-        // let time = read_csr!(time);
-        // write_csr!(stimecmp, time + 1_00_000);
+        // Request the first Sstc timer interrupt. Subsequent ticks are armed
+        // by timer(); without this initial compare value, TTY polling never
+        // runs and a shell blocks forever waiting for stdin.
+        let time = read_csr64!(time);
+        write_csr64!(stimecmp, time.wrapping_add(TIMER_INTERVAL));
 
         let sie = read_csr!(sie);
         write_csr!(sie, sie | SIE_SEIE | SIE_STIE);
@@ -234,7 +234,7 @@ pub extern "C" fn usertrap() -> usize {
 unsafe fn timer(proc: Option<&mut Process>) {
     unsafe {
         let time = read_csr64!(time);
-        let next = time.wrapping_add(1000000);
+        let next = time.wrapping_add(TIMER_INTERVAL);
         // print!("user>time: 0x{:x}, next timer on: 0x{:x}\n", time, next);
         write_csr64!(stimecmp, next);
 

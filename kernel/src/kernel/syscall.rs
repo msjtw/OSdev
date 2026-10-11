@@ -3,7 +3,7 @@ mod sys_proc;
 
 use crate::{
     kernel::syscall::{
-        sys_file::{sys_close, sys_dup, sys_dup3, sys_ioctl, sys_read, sys_write, sys_writev},
+        sys_file::{sys_close, sys_dup, sys_dup3, sys_fcntl, sys_ioctl, sys_openat, sys_read, sys_write, sys_writev},
         sys_proc::*,
     },
     log,
@@ -11,10 +11,13 @@ use crate::{
 };
 
 // Linux RISC-V syscall numbers.
+pub const SYS_GETCWD: usize = 17;
 pub const SYS_IOCTL: usize = 29;
+pub const SYS_FCNTL: usize = 25;
 pub const SYS_DUP: usize = 23;
 pub const SYS_DUP3: usize = 24;
 pub const SYS_CLOSE: usize = 57;
+pub const SYS_OPENAT: usize = 56;
 // pub const SYS_PIPE2: usize = 59;
 pub const SYS_READ: usize = 63;
 pub const SYS_WRITE: usize = 64;
@@ -24,9 +27,23 @@ pub const SYS_EXIT_GROUP: usize = 94;
 pub const SYS_WAITID: usize = 95;
 pub const SYS_SET_TID_ADDRESS: usize = 96;
 pub const SYS_RT_SIGPROCMASK: usize = 135;
+pub const SYS_RT_SIGACTION: usize = 134;
+pub const SYS_SETGID: usize = 144;
+pub const SYS_SETUID: usize = 146;
+pub const SYS_GETUID: usize = 174;
+pub const SYS_GETEUID: usize = 175;
+pub const SYS_GETGID: usize = 176;
+pub const SYS_GETEGID: usize = 177;
 pub const SYS_GETTID: usize = 178;
+pub const SYS_UNAME: usize = 160;
+pub const SYS_GETPID: usize = 172;
+pub const SYS_GETPPID: usize = 173;
+pub const SYS_BRK: usize = 214;
+pub const SYS_MUNMAP: usize = 215;
 pub const SYS_CLONE: usize = 220;
 pub const SYS_EXECVE: usize = 221;
+pub const SYS_MMAP: usize = 222;
+pub const SYS_PPOLL_TIME64: usize = 414;
 
 // NOTE:
 // syscall number: a7
@@ -39,15 +56,25 @@ pub fn syscall(proc: &mut Process) {
     // let args: [u32; 6];
 
     match sys_num {
+        SYS_GETCWD => sys_getcwd(proc),
         SYS_DUP => sys_dup(proc),
         SYS_DUP3 => sys_dup3(proc),
         SYS_CLOSE => sys_close(proc),
+        SYS_OPENAT => sys_openat(proc),
         // SYS_PIPE2 => sys_pipe2(proc),
         SYS_READ => sys_read(proc),
         SYS_WRITE => sys_write(proc),
         SYS_WRITEV => sys_writev(proc),
         SYS_IOCTL => sys_ioctl(proc),
+        SYS_FCNTL => sys_fcntl(proc),
+        SYS_RT_SIGACTION => sys_rt_sigaction(proc),
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(proc),
+        SYS_UNAME => sys_uname(proc),
+        SYS_GETPID => sys_getpid(proc),
+        SYS_GETPPID => sys_getppid(proc),
+        SYS_SETGID => sys_setgid(proc),
+        SYS_SETUID => sys_setuid(proc),
+        SYS_GETUID | SYS_GETEUID | SYS_GETGID | SYS_GETEGID => sys_get_root_identity(proc),
         SYS_CLONE => sys_clone(proc),
         SYS_EXECVE => sys_exec(proc),
         SYS_WAITID => sys_waitid(proc),
@@ -55,7 +82,10 @@ pub fn syscall(proc: &mut Process) {
         SYS_EXIT => sys_exit(proc),
         SYS_EXIT_GROUP => sys_exit(proc),
         SYS_GETTID => sys_gettid(proc),
-        // Return -ENOSYS for unsupported calls instead of crashing the kernel.
+        SYS_BRK => sys_brk(proc),
+        SYS_MMAP => sys_mmap(proc),
+        SYS_MUNMAP => sys_munmap(proc),
+        SYS_PPOLL_TIME64 => sys_ppoll(proc),
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);
             proc.trapframe.a0 = (-38isize) as usize;

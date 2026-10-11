@@ -8,7 +8,10 @@ use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, HEAP_ALLOCATOR, log,
-    process::{Process, trap::{trapframe::Trapframe, trampoline::_trampoline}},
+    process::{
+        Process,
+        trap::{trampoline::_trampoline, trapframe::Trapframe},
+    },
     write_csr,
 };
 
@@ -19,6 +22,12 @@ unsafe extern "C" {
 }
 
 pub const PAGESIZE: usize = 4 * 1024;
+
+pub fn align_up(value: usize, alignment: usize) -> Option<usize> {
+    let adjustment = alignment.checked_sub(1)?;
+    value.checked_add(adjustment).map(|value| value / alignment * alignment)
+}
+
 const RAMSIZE: usize = 62 * 1024 * 1024;
 const RAMSTART: usize = 0x80200000;
 pub const RAMEND: usize = RAMSTART + RAMSIZE;
@@ -35,12 +44,24 @@ pub const VIRT_END: usize = 0xffffffff - PAGESIZE + 1;
 pub const TRAMPOLINE: usize = VIRT_END - PAGESIZE;
 pub const TRAPFRAME: usize = TRAMPOLINE - PAGESIZE;
 
+pub const USER_MMAP_BASE: usize = 0x4000_0000;
+pub const USER_STACK_TOP: usize = TRAPFRAME;
+pub const USER_STACK_PAGES: usize = 8;
+// Keep one unmapped guard page below the fixed user stack.
+pub const USER_MMAP_END: usize = USER_STACK_TOP - (USER_STACK_PAGES + 1) * PAGESIZE;
+
 pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGESIZE, PAGESIZE) };
 
 pub const PTE_R: usize = 0b10;
 pub const PTE_W: usize = 0b100;
 pub const PTE_X: usize = 0b1000;
 pub const PTE_U: usize = 0b10000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmError {
+    Invalid,
+    NoMemory,
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
@@ -362,6 +383,9 @@ impl PageTable {
                     }
 
                     unsafe { pte_addr.write(0) };
+                    // Remove a stale translation before this virtual page can
+                    // be returned to the user allocator.
+                    unsafe { asm!("sfence.vma {}, zero", in(reg) va) };
                 }
             }
 
@@ -391,11 +415,16 @@ impl Kvm {
         let mut kvm = Kvm { pagetable };
         // map all sections
 
-        // poweroff
-        kvm.pagetable.map(0x100000, 0x100000, PAGESIZE, PTE_W)?;
+        // QEMU poweroff register.
+        kvm.pagetable
+            .map(0x00100000, 0x00100000, PAGESIZE, PTE_R | PTE_W)?;
 
         // uart
         kvm.pagetable.map(UART, UART, PAGESIZE, PTE_R | PTE_W)?;
+
+        // virtio-blk
+        kvm.pagetable
+            .map(0x10001000, 0x10001000, 0x8000, PTE_R | PTE_W)?;
 
         // kernel text
         let end_text = unsafe { &etext } as *const usize as usize;
@@ -450,6 +479,9 @@ impl Kvm {
 #[derive(Debug)]
 pub struct Uvm {
     pub end: usize,
+    pub heap_base: usize,
+    pub prog_break: usize,
+    pub mmap_next: usize,
     page_list: Vec<usize>,
     size: usize,
     pagetable: PageTable,
@@ -461,6 +493,10 @@ impl Clone for Uvm {
 
         vm.page_list = self.page_list.clone();
         vm.size = self.size;
+        vm.end = self.end;
+        vm.heap_base = self.heap_base;
+        vm.prog_break = self.prog_break;
+        vm.mmap_next = self.mmap_next;
 
         // for addr in (USER_START..self.end()).step_by(PAGESIZE) {
         for addr in &self.page_list {
@@ -493,6 +529,9 @@ impl Uvm {
     pub fn new() -> Result<Uvm, ()> {
         let uvm = Uvm {
             end: 0,
+            heap_base: 0,
+            prog_break: 0,
+            mmap_next: USER_MMAP_BASE,
             page_list: Vec::new(),
             size: 0,
             pagetable: PageTable::default(),
@@ -523,65 +562,74 @@ impl Uvm {
         }
     }
 
-    // pub fn end(&self) -> usize {
-    //     self.begin + self.size
-    // }
-
-    // pub fn grow(&mut self, size: usize, perm: usize) -> Result<(), ()> {
-    //     self.alloc(self.size + size, perm)
-    // }
-
-    // grow new pages to size
-    // it creates virt address space from USERBASE to size
-    // allocates memory at virtual address addr of size
-    pub fn alloc(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), ()> {
-        let mut allocated = 0;
-        while allocated < size {
-            // NOTE: Gurad pages shoudl not be mapped
-            if perm == 0 {
-                self.size += PAGESIZE;
-                allocated += PAGESIZE;
-                continue;
-            }
-
-            let page = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as usize };
-            // NOTE: OOM Error
-            if page == 0 {
-                return Err(());
-            }
-
-            let alloc_addr = addr + allocated;
-            if self
-                .pagetable
-                .map(alloc_addr, page, PAGESIZE, perm | PTE_U)
-                .is_err()
-            {
-                // NOTE: free memory on fail
-                unsafe { HEAP_ALLOCATOR.dealloc(page as *mut u8, PAGE_LAYOUT) };
-                return Err(());
-            }
-            // Keep virtual page addresses: clone() walks these VAs, and free()
-            // unmaps them from this page table.
-            self.page_list.push(alloc_addr);
-            self.size += PAGESIZE;
-            allocated += PAGESIZE;
-            self.end = self.end.max(alloc_addr + PAGESIZE);
+    pub fn brk(&mut self, addr: usize) -> usize {
+        if addr == 0 || addr < self.heap_base {
+            return self.prog_break;
         }
-        Ok(())
+
+        let Some(old_end) = align_up(self.prog_break, PAGESIZE) else {
+            return self.prog_break;
+        };
+        let Some(new_end) = align_up(addr, PAGESIZE) else {
+            return self.prog_break;
+        };
+        if new_end >= USER_MMAP_BASE {
+            return self.prog_break;
+        }
+
+        let result = if new_end > old_end {
+            self.map(old_end, new_end - old_end, PTE_R | PTE_W)
+        } else if new_end < old_end {
+            self.unmap(new_end, old_end - new_end)
+        } else {
+            Ok(())
+        };
+
+        if result.is_ok() {
+            self.prog_break = addr;
+        }
+        self.prog_break
     }
 
-    // FIX: Needs to be reimplemented
-    // shrink virt address space to size
-    // pub fn dealloc(&mut self, size: usize) -> Result<(), ()> {
-    //     if !size.is_multiple_of(PAGESIZE) {
-    //         return Err(());
-    //     }
-    //
-    //     let newend = USER_START + size;
-    //     self.pagetable.unmap(newend, self.size - size, true)?;
-    //     self.size = size;
-    //     Ok(())
-    // }
+    // Map freshly allocated, zero-filled user pages at a fixed address.
+    pub fn map(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), VmError> {
+        if size == 0
+            || perm == 0
+            || !addr.is_multiple_of(PAGESIZE)
+            || !size.is_multiple_of(PAGESIZE)
+            || addr.checked_add(size).is_none()
+        {
+            return Err(VmError::Invalid);
+        }
+        self.alloc(addr, size, perm).map_err(|()| VmError::NoMemory)
+    }
+
+    // Allocate an mapping in the mmap region and return its base.
+    pub fn map_anonymous(&mut self, addr: usize, length: usize, perm: usize) -> Result<usize, VmError> {
+        if addr != 0 || length == 0 || perm == 0 {
+            return Err(VmError::Invalid);
+        }
+        let length = align_up(length, PAGESIZE).ok_or(VmError::NoMemory)?;
+        let base = self.mmap_next;
+        let next = base.checked_add(length).ok_or(VmError::NoMemory)?;
+        if next > USER_MMAP_END {
+            return Err(VmError::NoMemory);
+        }
+
+        self.map(base, length, perm)?;
+        self.mmap_next = next;
+        Ok(base)
+    }
+
+    // Remove user pages and release their backing frames.
+    pub fn unmap(&mut self, addr: usize, length: usize) -> Result<(), VmError> {
+        if length == 0 || !addr.is_multiple_of(PAGESIZE) {
+            return Err(VmError::Invalid);
+        }
+        let size = align_up(length, PAGESIZE).ok_or(VmError::Invalid)?;
+        addr.checked_add(size).ok_or(VmError::Invalid)?;
+        self.dealloc(addr, size).map_err(|()| VmError::Invalid)
+    }
 
     pub fn init_proc(&mut self, proc: &Process) -> Result<(), ()> {
         let trampoline = unsafe { &_trampoline as *const usize as usize };
@@ -600,33 +648,99 @@ impl Uvm {
 
     // copy img to self at va
     // memory needs to be preallocated  TODO: does it really? Why can't it be allocated here?
-    pub fn load(&mut self, mut va: usize, img: &[u8]) -> Result<(), ()> {
+    pub fn load(&mut self, mut va: usize, mut img: &[u8]) -> Result<(), ()> {
         // load is executed in kernel with kernel pagetree.
-        if !va.is_multiple_of(PAGESIZE) {
-            return Err(());
-        }
-        for page in img.chunks(PAGESIZE) {
-            // for w in page.chunks(4) {
-            //     print!("0x{:08x}\n", u32::from_le_bytes(w.try_into().unwrap()));
-            // }
+        while !img.is_empty() {
+            let page_va = va & !(PAGESIZE - 1);
+            let page_offset = va - page_va;
+            let count = (PAGESIZE - page_offset).min(img.len());
             let pte = unsafe {
                 self.pagetable
-                    .walk(va as usize, WalkType::Walk)
+                    .walk(page_va, WalkType::Walk)
                     .ok_or(())?
                     .read()
             };
             let pte = Pte::from(pte);
-            // NOTE: This write will go through kernel pagetree,
-            // so the dst address is va in kernel virt memory,
-            // but in kernel pa is identity mapped so pa = va.
+            // The pages were zeroed by alloc(), so copying only file bytes
+            // naturally leaves an ELF segment's BSS tail zero-filled.
             unsafe {
-                let src_addr = page.as_ptr() as *const u8;
-                let dst_addr = pte.pa as *mut u8;
-                write_bytes(dst_addr, 0, PAGESIZE);
-                copy_nonoverlapping(src_addr, dst_addr, page.len());
+                let src_addr = img.as_ptr();
+                let dst_addr = (pte.pa + page_offset) as *mut u8;
+                copy_nonoverlapping(src_addr, dst_addr, count);
             };
-            va += PAGESIZE;
+            va += count;
+            img = &img[count..];
         }
+        Ok(())
+    }
+
+    // grow new pages to size
+    // it creates virt address space from USERBASE to size
+    // allocates memory at virtual address addr of size
+    fn alloc(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), ()> {
+        let mut allocated = 0;
+        let original_end = self.end;
+        while allocated < size {
+            // NOTE: Gurad pages shoudl not be mapped
+            if perm == 0 {
+                self.size += PAGESIZE;
+                allocated += PAGESIZE;
+                continue;
+            }
+
+            let page = unsafe { HEAP_ALLOCATOR.alloc_zeroed(PAGE_LAYOUT) as usize };
+            // NOTE: OOM Error
+            if page == 0 {
+                self.rollback_alloc(addr, allocated, original_end);
+                return Err(());
+            }
+
+            let Some(alloc_addr) = addr.checked_add(allocated) else {
+                unsafe { HEAP_ALLOCATOR.dealloc(page as *mut u8, PAGE_LAYOUT) };
+                self.rollback_alloc(addr, allocated, original_end);
+                return Err(());
+            };
+            if self
+                .pagetable
+                .map(alloc_addr, page, PAGESIZE, perm | PTE_U)
+                .is_err()
+            {
+                unsafe { HEAP_ALLOCATOR.dealloc(page as *mut u8, PAGE_LAYOUT) };
+                self.rollback_alloc(addr, allocated, original_end);
+                return Err(());
+            }
+            // Keep virtual page addresses: clone() walks these VAs, and free()
+            // unmaps them from this page table.
+            self.page_list.push(alloc_addr);
+            self.size += PAGESIZE;
+            allocated += PAGESIZE;
+            self.end = self.end.max(alloc_addr + PAGESIZE);
+        }
+        Ok(())
+    }
+
+    fn rollback_alloc(&mut self, addr: usize, allocated: usize, original_end: usize) {
+        if allocated != 0 {
+            self.dealloc(addr, allocated)
+                .expect("allocated user pages must be mappable for rollback");
+        }
+        self.end = original_end;
+    }
+
+    // Unmap a page-aligned range and release its backing user frames.
+    fn dealloc(&mut self, addr: usize, size: usize) -> Result<(), ()> {
+        if size == 0 || !addr.is_multiple_of(PAGESIZE) || !size.is_multiple_of(PAGESIZE) {
+            return Err(());
+        }
+        let end = addr.checked_add(size).ok_or(())?;
+
+        self.pagetable.unmap(addr, size, true)?;
+
+        let pages_before = self.page_list.len();
+        self.page_list.retain(|&page| page < addr || page >= end);
+        let pages_removed = pages_before - self.page_list.len();
+        self.size = self.size.saturating_sub(pages_removed * PAGESIZE);
+
         Ok(())
     }
 }
@@ -736,14 +850,4 @@ pub fn copy_out_cont(uv: &mut Uvm, mut addr: usize, mut data: &[u8]) -> Result<(
     }
 
     Ok(())
-}
-
-fn _align_up(val: u32, alignment: u32) -> u32 {
-    let tmp = val + alignment - 1;
-    _align_down(tmp, alignment)
-}
-
-fn _align_down(val: u32, alignment: u32) -> u32 {
-    let rem = val % alignment;
-    val - rem
 }

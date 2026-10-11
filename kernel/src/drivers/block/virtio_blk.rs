@@ -24,6 +24,8 @@ const FEAT_VIRTIO_VERSION_1: u64 = 1 << 32;
 const CONFIG_CAPACITY: usize = 0x00;
 const CONFIG_BLOCK_SIZE: usize = 0x14;
 
+use alloc::vec::Vec;
+
 use crate::log;
 
 use crate::drivers::block::BlockDevice;
@@ -47,6 +49,13 @@ pub struct VirtioBlk<T: Transport, const N: usize> {
     queue: SplitQueue<N>,
     capacity: u64,
     block_size: usize,
+    // These fields live in the heap-allocated block-device object, whose
+    // address is physical/direct-mapped. They must not be request locals:
+    // after entering userspace, request locals live on a high virtual kernel
+    // stack and are not valid addresses for a VirtIO DMA device.
+    request_header: ReqHeader,
+    request_status: u8,
+    bounce: Vec<u8>,
 }
 
 impl<const N: usize> VirtioBlk<Mmio, N> {
@@ -56,6 +65,13 @@ impl<const N: usize> VirtioBlk<Mmio, N> {
             queue: SplitQueue::<N>::new(),
             capacity: 0,
             block_size: 0,
+            request_header: ReqHeader {
+                kind: 0,
+                reserved: 0,
+                sector: 0,
+            },
+            request_status: 0xff,
+            bounce: Vec::new(),
         }
     }
 
@@ -67,8 +83,6 @@ impl<const N: usize> VirtioBlk<Mmio, N> {
         self.check_vendor_id()?;
         self.check_device_id()?;
 
-        self.capacity = self.transport.read_config_u64(CONFIG_CAPACITY);
-
         self.acknowledge_driver()?;
 
         let required_features = FEAT_VIRTIO_VERSION_1 | FEAT_FLUSH;
@@ -77,9 +91,30 @@ impl<const N: usize> VirtioBlk<Mmio, N> {
 
         self.negotiate_features(required_features, supported_features)?;
 
-        self.block_size = self.transport.read_config_u32(CONFIG_BLOCK_SIZE) as usize;
+        // VIRTIO_BLK_F_BLK_SIZE is optional; without it the specification
+        // defines a 512-byte logical block size and the config field is not
+        // valid (QEMU returns zero there).
+        self.block_size = if self.transport.device_features() & FEAT_BLOCK_SIZE != 0 {
+            self.transport.read_config_u32(CONFIG_BLOCK_SIZE) as usize
+        } else {
+            SECTOR_SIZE
+        };
+        if self.block_size == 0 {
+            // Some QEMU versions advertise BLK_SIZE but leave the optional
+            // configuration value at zero.  The virtio default remains 512.
+            self.block_size = SECTOR_SIZE;
+        }
         if self.block_size < 512 || !self.block_size.is_power_of_two() {
             log::error!("virtio-blk: invliad block size: {}", self.block_size);
+            return Err(());
+        }
+        // Use a permanent DMA-safe buffer. Callers can supply stack or
+        // virtual-memory buffers, neither of which may be physical addresses.
+        self.bounce = alloc::vec![0; self.block_size];
+        let capacity_sectors = self.transport.read_config_u64(CONFIG_CAPACITY);
+        self.capacity = capacity_sectors / (self.block_size / SECTOR_SIZE) as u64;
+        if self.capacity == 0 {
+            log::error!("virtio-blk: device has no addressable blocks");
             return Err(());
         }
         log::debug!("virtio-blk: block size: {}", self.block_size);
@@ -272,7 +307,7 @@ impl<T: Transport, const N: usize> VirtioBlk<T, N> {
 
     #[inline]
     fn sector_from_block_idx(&self, block_idx: u64) -> Result<u64, ()> {
-        if block_idx > self.capacity {
+        if block_idx >= self.capacity {
             log::error!(
                 "virtio-blk: cannot access block {}, capacity is {}",
                 block_idx,
@@ -301,34 +336,39 @@ impl<T: Transport, const N: usize> BlockDevice for VirtioBlk<T, N> {
 
         let sector_idx = self.sector_from_block_idx(block_idx)?;
 
-        let header = ReqHeader {
+        self.request_header = ReqHeader {
             kind: KIND_IN,
             reserved: 0,
             sector: sector_idx,
         };
+        self.request_status = 0xff;
 
-        let mut status = 0xff_u8;
+        let header_addr = &self.request_header as *const ReqHeader as usize;
+        let data_addr = self.bounce.as_mut_ptr() as usize;
+        let status_addr = &mut self.request_status as *mut u8 as usize;
 
         self.queue
             .desc(0)
-            .addr(&header)
+            .addr_raw(header_addr)
             .len_from_type::<ReqHeader>()
             .next(1);
 
         self.queue
             .desc(1)
-            .addr(buf)
+            .addr_raw(data_addr)
             .len(self.block_size)
             .flag_write()
             .next(2);
 
-        self.queue.desc(2).addr(&status).len(1).flag_write();
+        self.queue.desc(2).addr_raw(status_addr).len(1).flag_write();
 
         self.queue.push(0);
         self.transport.notify_queue(0);
 
         self.wait_for_request(0)?;
+        let status = unsafe { core::ptr::read_volatile(&self.request_status) };
         self.validate_request_status(status)?;
+        buf.copy_from_slice(&self.bounce);
 
         Ok(())
     }
@@ -338,59 +378,67 @@ impl<T: Transport, const N: usize> BlockDevice for VirtioBlk<T, N> {
 
         let sector_idx = self.sector_from_block_idx(block_idx)?;
 
-        let header = ReqHeader {
+        self.request_header = ReqHeader {
             kind: KIND_OUT,
             reserved: 0,
             sector: sector_idx,
         };
+        self.request_status = 0xff;
+        self.bounce.copy_from_slice(buf);
 
-        let mut status = 0xff_u8;
+        let header_addr = &self.request_header as *const ReqHeader as usize;
+        let data_addr = self.bounce.as_ptr() as usize;
+        let status_addr = &mut self.request_status as *mut u8 as usize;
 
         self.queue
             .desc(0)
-            .addr(&header)
+            .addr_raw(header_addr)
             .len_from_type::<ReqHeader>()
             .next(1);
 
         self.queue
             .desc(1)
-            .addr(buf)
+            .addr_raw(data_addr)
             .len(self.block_size)
             .flag_write()
             .next(2);
 
-        self.queue.desc(2).addr(&status).len(1).flag_write();
+        self.queue.desc(2).addr_raw(status_addr).len(1).flag_write();
 
         self.queue.push(0);
         self.transport.notify_queue(0);
 
         self.wait_for_request(0)?;
+        let status = unsafe { core::ptr::read_volatile(&self.request_status) };
         self.validate_request_status(status)?;
 
         Ok(())
     }
 
     fn flush(&mut self) -> Result<(), ()> {
-        let header = ReqHeader {
+        self.request_header = ReqHeader {
             kind: KIND_FLUSH,
             reserved: 0,
             sector: 0,
         };
+        self.request_status = 0xff;
 
-        let mut status = 0xff_u8;
+        let header_addr = &self.request_header as *const ReqHeader as usize;
+        let status_addr = &mut self.request_status as *mut u8 as usize;
 
         self.queue
             .desc(0)
-            .addr(&header)
+            .addr_raw(header_addr)
             .len_from_type::<ReqHeader>()
             .next(1);
 
-        self.queue.desc(1).addr(&status).len(1).flag_write();
+        self.queue.desc(1).addr_raw(status_addr).len(1).flag_write();
 
         self.queue.push(0);
         self.transport.notify_queue(0);
 
         self.wait_for_request(0)?;
+        let status = unsafe { core::ptr::read_volatile(&self.request_status) };
         self.validate_request_status(status)?;
 
         Ok(())

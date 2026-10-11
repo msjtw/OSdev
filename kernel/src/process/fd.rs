@@ -4,6 +4,7 @@ use crate::process::Process;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
+    EPERM,
     EBADF,
     EFAULT,
     EINVAL,
@@ -12,30 +13,54 @@ pub enum Errno {
     EMFILE,
     EAGAIN,
     ENOENT,
+    ENOTDIR,
+    EISDIR,
+    EROFS,
+    EIO,
+    EOVERFLOW,
     ECHILD,
+    ENOMEM,
+    ERANGE,
 }
 
 impl Into<usize> for Errno {
     fn into(self) -> usize {
         let code = match self {
+            Self::EPERM => 1,
             Self::ENOENT => 2,
+            Self::ENOTDIR => 20,
+            Self::EISDIR => 21,
             Self::EBADF => 9, // Bad file descriptor.
             Self::ECHILD => 10,
+            Self::ENOMEM => 12,
             Self::EAGAIN => 11,
             Self::EFAULT => 14, // Bad address.
             Self::EINVAL => 22, // Invalid argument.
             Self::EMFILE => 24, // Too many open files.
             Self::ENOTTY => 25, // Inappropriate ioctl for device.
             Self::EPIPE => 32,  // Broken pipe.
+            Self::ERANGE => 34,
+            Self::EROFS => 30,
+            Self::EIO => 5,
+            Self::EOVERFLOW => 75,
         };
         (-code as isize) as usize
     }
 }
 
+pub type PollEvents = i16;
+pub const POLLIN: PollEvents = 0x001;
+pub const POLLOUT: PollEvents = 0x004;
+pub const POLLNVAL: PollEvents = 0x020;
+
 pub trait FileOps: core::fmt::Debug + Send + Sync {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn write(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn ioctl(&self, proc: &mut Process, op: usize, arg: usize) -> Result<usize, Errno>;
+
+    fn poll(&self, _events: PollEvents) -> PollEvents {
+        0
+    }
 }
 
 #[derive(Debug)]

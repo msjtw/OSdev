@@ -5,7 +5,7 @@ use crate::{
     lock::IntMutex,
     process::{
         Process,
-        fd::{Errno, FileOps},
+        fd::{Errno, FileOps, PollEvents, POLLIN, POLLOUT},
     },
     virtmemory::{copy_in_cont, copy_out_cont},
 };
@@ -43,6 +43,22 @@ impl TTY {
 }
 
 impl FileOps for TTY {
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let mut ready = 0;
+        // Until ppoll can sleep on the TTY input channel, report stdin as
+        // readable so callers enter read_blocking(), which supplies that
+        // sleep-and-wakeup behavior.
+        if events & POLLIN != 0 {
+            ready |= POLLIN;
+        }
+        // UART writes are synchronous, so there is no software output queue
+        // that can become full.
+        if events & POLLOUT != 0 {
+            ready |= POLLOUT;
+        }
+        ready
+    }
+
     fn read(
         &self,
         proc: &mut super::Process,

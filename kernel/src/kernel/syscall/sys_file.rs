@@ -1,7 +1,8 @@
 use crate::{
+    fs, log,
     process::Process,
     process::{fd::Errno, pipe::new_pipe},
-    virtmemory::{copy_in, copy_out_cont},
+    virtmemory::{copy_in, copy_in_str, copy_out_cont},
 };
 use alloc::sync::Arc;
 
@@ -90,6 +91,102 @@ pub fn sys_dup3(proc: &mut Process) {
     match fds.duplicate(oldfd_idx, Some(newfd_idx), Some(flags)) {
         Ok(dup_idx) => proc.trapframe.a0 = dup_idx,
         Err(error) => proc.trapframe.a0 = error.into(),
+    }
+}
+
+pub fn sys_fcntl(proc: &mut Process) {
+    const F_GETFD: usize = 1;
+    const F_SETFD: usize = 2;
+    const F_GETFL: usize = 3;
+    const F_SETFL: usize = 4;
+    const FD_CLOEXEC: usize = 1;
+    const O_WRONLY: usize = 1;
+    const O_RDWR: usize = 2;
+
+    let fd = proc.trapframe.a0;
+    let command = proc.trapframe.a1;
+    let argument = proc.trapframe.a2;
+    let descriptor = match proc.fds.get(fd) {
+        Ok(descriptor) => descriptor,
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
+        }
+    };
+
+    proc.trapframe.a0 = match command {
+        F_GETFD => 0,
+        F_SETFD if argument & !FD_CLOEXEC == 0 => 0,
+        F_GETFL => match (descriptor.readable, descriptor.writable) {
+            (true, true) => O_RDWR,
+            (false, true) => O_WRONLY,
+            _ => 0,
+        },
+        // The current descriptors have no mutable status flags.  Accept the
+        // request so libc can configure standard streams during startup.
+        F_SETFL => 0,
+        _ => Errno::EINVAL.into(),
+    };
+}
+
+// Open a regular file from the read-only ext4 root filesystem.
+pub fn sys_openat(proc: &mut Process) {
+    const AT_FDCWD: usize = (-100isize) as usize;
+
+    const O_ACCMODE: usize = 3;
+    const O_RDONLY: usize = 0;
+    const O_CREAT: usize = 0x40;
+    const O_TRUNC: usize = 0x200;
+
+    let dirfd = proc.trapframe.a0;
+    let path_addr = proc.trapframe.a1;
+    let flags = proc.trapframe.a2;
+
+    match copy_in_str(&mut proc.pagetable, path_addr) {
+        Ok(path) => {
+            log::info!(
+                "openat: dirfd={} path={:?} flags={:#x} mode={:#x}",
+                dirfd,
+                path,
+                flags,
+                proc.trapframe.a3
+            );
+            if dirfd != AT_FDCWD
+                || flags & O_ACCMODE != O_RDONLY
+                || flags & (O_CREAT | O_TRUNC) != 0
+            {
+                proc.trapframe.a0 = Errno::EROFS.into();
+                return;
+            }
+
+            let path = if path.starts_with('/') {
+                // If the pathname given in path is absolute, then dirfd is ignored.
+                path
+            } else {
+                // If the pathname given in path is relative
+                if dirfd == AT_FDCWD {
+                    // and dirfd is the special value AT_FDCWD, then path is interpreted relative
+                    // to the current working directory of the calling process
+                    alloc::format!("/{}", path)
+                } else {
+                    // then it is interpreted relative to the directory referred to by the file descriptor dirfd
+                    alloc::format!("/{}", path)
+                }
+            };
+
+            proc.trapframe.a0 = match fs::open_file(&path) {
+                Ok(target) => match proc.fds.push(Arc::new(crate::process::fd::FileDescriptor {
+                    target,
+                    readable: true,
+                    writable: false,
+                })) {
+                    Ok(fd) => fd,
+                    Err(error) => error.into(),
+                },
+                Err(error) => error.into(),
+            };
+        }
+        Err(()) => proc.trapframe.a0 = Errno::EFAULT.into(),
     }
 }
 
@@ -205,10 +302,7 @@ pub fn sys_writev(proc: &mut Process) {
             }
         };
 
-        match descriptor
-            .target
-            .write(proc, iovec.iov_base, iovec.iov_len)
-        {
+        match descriptor.target.write(proc, iovec.iov_base, iovec.iov_len) {
             Ok(count) => {
                 let Some(total) = written.checked_add(count) else {
                     proc.trapframe.a0 = Errno::EINVAL.into();
@@ -225,7 +319,6 @@ pub fn sys_writev(proc: &mut Process) {
                 return;
             }
         }
-
     }
 
     proc.trapframe.a0 = written;

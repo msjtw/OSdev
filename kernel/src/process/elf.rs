@@ -95,6 +95,14 @@ pub fn get_elf_segments(img: &[u8]) -> Result<Vec<Elf32_Phdr>, ()> {
         .collect())
 }
 
+pub fn get_elf_entry(img: &[u8]) -> Result<usize, ()> {
+    let ehdr = unsafe { core::ptr::read_unaligned(img.as_ptr() as *const ElfEhdr) };
+    if ehdr.e_ident[0..4] != [0x7f, 'E' as u8, 'L' as u8, 'F' as u8] || ehdr.e_ident[4] != 1 {
+        return Err(());
+    }
+    Ok(ehdr.e_entry as usize)
+}
+
 pub fn segment_bytes<'a>(elf: &'a [u8], phdr: &Elf32_Phdr) -> Option<&'a [u8]> {
     let start = phdr.p_offset as usize;
     let size = phdr.p_filesz as usize;
