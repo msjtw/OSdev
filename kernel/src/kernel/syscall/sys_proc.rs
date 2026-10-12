@@ -3,10 +3,47 @@ use alloc::{string::String, vec::Vec};
 use crate::{
     log,
     process::{ForkError, Process, fd::{Errno, POLLIN, POLLOUT, POLLNVAL}},
+    read_csr64,
     virtmemory::{
         PAGESIZE, PTE_R, PTE_W, PTE_X, VmError, copy_in, copy_in_str, copy_out, copy_out_cont,
     },
 };
+
+const CLOCK_REALTIME: usize = 0;
+const CLOCK_MONOTONIC: usize = 1;
+// QEMU virt exposes a 10 MHz RISC-V time counter. This should eventually be
+// obtained from the device tree's timebase-frequency property.
+const TIMEBASE_HZ: u64 = 10_000_000;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Timespec64 {
+    tv_sec: i64,
+    tv_nsec: i64,
+}
+
+/// Linux RV32 clock_gettime64(2). Until an RTC or wall-clock source exists,
+/// CLOCK_REALTIME and CLOCK_MONOTONIC both report elapsed boot time.
+pub fn sys_clock_gettime64(proc: &mut Process) {
+    let clock_id = proc.trapframe.a0;
+    let timespec_addr = proc.trapframe.a1;
+
+    if clock_id != CLOCK_REALTIME && clock_id != CLOCK_MONOTONIC {
+        proc.trapframe.a0 = Errno::EINVAL.into();
+        return;
+    }
+
+    let ticks = unsafe { read_csr64!(time) };
+    let timespec = Timespec64 {
+        tv_sec: (ticks / TIMEBASE_HZ) as i64,
+        tv_nsec: ((ticks % TIMEBASE_HZ) * 1_000_000_000 / TIMEBASE_HZ) as i64,
+    };
+
+    proc.trapframe.a0 = match copy_out(&mut proc.pagetable, timespec_addr, timespec) {
+        Ok(()) => 0,
+        Err(()) => Errno::EFAULT.into(),
+    };
+}
 
 //  Returns the real user ID of the calling process
 pub fn sys_get_root_identity(proc: &mut Process) {

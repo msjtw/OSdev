@@ -1,8 +1,8 @@
 use crate::{
     fs, log,
     process::Process,
-    process::{fd::Errno, pipe::new_pipe},
-    virtmemory::{copy_in, copy_in_str, copy_out_cont},
+    process::fd::Errno,
+    virtmemory::{copy_in, copy_in_str, copy_out},
 };
 use alloc::sync::Arc;
 
@@ -190,6 +190,114 @@ pub fn sys_openat(proc: &mut Process) {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct StatxTimestamp {
+    tv_sec: i64,
+    tv_nsec: u32,
+    __reserved: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct Statx {
+    stx_mask: u32,
+    stx_blksize: u32,
+    stx_attributes: u64,
+    stx_nlink: u32,
+    stx_uid: u32,
+    stx_gid: u32,
+    stx_mode: u16,
+    __spare0: u16,
+    stx_ino: u64,
+    stx_size: u64,
+    stx_blocks: u64,
+    stx_attributes_mask: u64,
+    stx_atime: StatxTimestamp,
+    stx_btime: StatxTimestamp,
+    stx_ctime: StatxTimestamp,
+    stx_mtime: StatxTimestamp,
+    stx_rdev_major: u32,
+    stx_rdev_minor: u32,
+    stx_dev_major: u32,
+    stx_dev_minor: u32,
+    stx_mnt_id: u64,
+    stx_dio_mem_align: u32,
+    stx_dio_offset_align: u32,
+    __spare3: [u64; 12],
+}
+
+// Stax size assertion
+const _: [(); 256] = [(); core::mem::size_of::<Statx>()];
+
+// Linux RISC-V statx(2). Only the mounted read-only root filesystem is
+// currently supported.
+pub fn sys_statx(proc: &mut Process) {
+    const AT_FDCWD: usize = (-100isize) as usize;
+    const STATX_BASIC_STATS: u32 = 0x07ff;
+    const STATX_BTIME: u32 = 0x0800;
+
+    let dirfd = proc.trapframe.a0;
+    let path_addr = proc.trapframe.a1;
+    let statx_addr = proc.trapframe.a4;
+
+    if dirfd != AT_FDCWD {
+        proc.trapframe.a0 = Errno::ENOTDIR.into();
+        return;
+    }
+
+    let path = match copy_in_str(&mut proc.pagetable, path_addr) {
+        Ok(path) => path,
+        Err(()) => {
+            proc.trapframe.a0 = Errno::EFAULT.into();
+            return;
+        }
+    };
+    let path = if path.starts_with('/') {
+        path
+    } else {
+        let cwd = proc.cwd.as_deref().unwrap_or("/");
+        if cwd == "/" {
+            alloc::format!("/{path}")
+        } else {
+            alloc::format!("{cwd}/{path}")
+        }
+    };
+
+    let metadata = match fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
+        }
+    };
+    let timestamp = |seconds| StatxTimestamp {
+        tv_sec: seconds as i64,
+        ..Default::default()
+    };
+    let stat = Statx {
+        stx_mask: STATX_BASIC_STATS | STATX_BTIME,
+        stx_blksize: ext4_rs::BLOCK_SIZE as u32,
+        stx_nlink: metadata.links,
+        stx_uid: metadata.uid,
+        stx_gid: metadata.gid,
+        stx_mode: metadata.mode,
+        stx_ino: metadata.inode,
+        stx_size: metadata.size,
+        stx_blocks: metadata.blocks,
+        stx_atime: timestamp(metadata.atime),
+        stx_btime: timestamp(metadata.btime),
+        stx_ctime: timestamp(metadata.ctime),
+        stx_mtime: timestamp(metadata.mtime),
+        ..Default::default()
+    };
+
+    proc.trapframe.a0 = match copy_out(&mut proc.pagetable, statx_addr, stat) {
+        Ok(()) => 0,
+        Err(()) => Errno::EFAULT.into(),
+    };
+}
+
 pub fn sys_close(proc: &mut Process) {
     let fd_idx = proc.trapframe.a0;
 
@@ -216,6 +324,29 @@ pub fn sys_read(proc: &mut Process) {
         }
     };
     proc.trapframe.a0 = match descriptor.target.read(proc, addr, size) {
+        Ok(count) => count,
+        Err(error) => error.into(),
+    };
+}
+
+// Linux RISC-V getdents64(2).
+pub fn sys_getdents64(proc: &mut Process) {
+    let fd = proc.trapframe.a0;
+    let addr = proc.trapframe.a1;
+    let len = proc.trapframe.a2;
+
+    let descriptor = match proc.fds.get(fd) {
+        Ok(descriptor) if descriptor.readable => descriptor,
+        Ok(_) => {
+            proc.trapframe.a0 = Errno::EBADF.into();
+            return;
+        }
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
+        }
+    };
+    proc.trapframe.a0 = match descriptor.target.getdents64(proc, addr, len) {
         Ok(count) => count,
         Err(error) => error.into(),
     };

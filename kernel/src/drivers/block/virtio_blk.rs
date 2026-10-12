@@ -316,7 +316,7 @@ impl<T: Transport, const N: usize> VirtioBlk<T, N> {
             Err(())
         } else {
             let sectors_per_block = self.block_size / SECTOR_SIZE;
-            Ok((block_idx * (sectors_per_block as u64)))
+            Ok(block_idx * (sectors_per_block as u64))
         }
     }
 }

@@ -3,7 +3,7 @@ mod sys_proc;
 
 use crate::{
     kernel::syscall::{
-        sys_file::{sys_close, sys_dup, sys_dup3, sys_fcntl, sys_ioctl, sys_openat, sys_read, sys_write, sys_writev},
+        sys_file::{sys_close, sys_dup, sys_dup3, sys_fcntl, sys_getdents64, sys_ioctl, sys_openat, sys_read, sys_statx, sys_write, sys_writev},
         sys_proc::*,
     },
     log,
@@ -18,6 +18,7 @@ pub const SYS_DUP: usize = 23;
 pub const SYS_DUP3: usize = 24;
 pub const SYS_CLOSE: usize = 57;
 pub const SYS_OPENAT: usize = 56;
+pub const SYS_GETDENTS64: usize = 61;
 // pub const SYS_PIPE2: usize = 59;
 pub const SYS_READ: usize = 63;
 pub const SYS_WRITE: usize = 64;
@@ -43,6 +44,8 @@ pub const SYS_MUNMAP: usize = 215;
 pub const SYS_CLONE: usize = 220;
 pub const SYS_EXECVE: usize = 221;
 pub const SYS_MMAP: usize = 222;
+pub const SYS_STATX: usize = 291;
+pub const SYS_CLOCK_GETTIME64: usize = 403;
 pub const SYS_PPOLL_TIME64: usize = 414;
 
 // NOTE:
@@ -61,6 +64,7 @@ pub fn syscall(proc: &mut Process) {
         SYS_DUP3 => sys_dup3(proc),
         SYS_CLOSE => sys_close(proc),
         SYS_OPENAT => sys_openat(proc),
+        SYS_GETDENTS64 => sys_getdents64(proc),
         // SYS_PIPE2 => sys_pipe2(proc),
         SYS_READ => sys_read(proc),
         SYS_WRITE => sys_write(proc),
@@ -85,6 +89,8 @@ pub fn syscall(proc: &mut Process) {
         SYS_BRK => sys_brk(proc),
         SYS_MMAP => sys_mmap(proc),
         SYS_MUNMAP => sys_munmap(proc),
+        SYS_STATX => sys_statx(proc),
+        SYS_CLOCK_GETTIME64 => sys_clock_gettime64(proc),
         SYS_PPOLL_TIME64 => sys_ppoll(proc),
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);

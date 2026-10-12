@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use alloc::{sync::Arc, vec::Vec};
 
 use crate::process::Process;
@@ -53,21 +55,34 @@ pub const POLLIN: PollEvents = 0x001;
 pub const POLLOUT: PollEvents = 0x004;
 pub const POLLNVAL: PollEvents = 0x020;
 
-pub trait FileOps: core::fmt::Debug + Send + Sync {
+pub trait FileOps: Send + Sync {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn write(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn ioctl(&self, proc: &mut Process, op: usize, arg: usize) -> Result<usize, Errno>;
+
+    // Return Linux dirent64 records for a directory descriptor.
+    fn getdents64(&self, _proc: &mut Process, _addr: usize, _len: usize) -> Result<usize, Errno> {
+        Err(Errno::ENOTDIR)
+    }
 
     fn poll(&self, _events: PollEvents) -> PollEvents {
         0
     }
 }
 
-#[derive(Debug)]
 pub struct FileDescriptor {
     pub target: Arc<dyn FileOps>,
     pub readable: bool,
     pub writable: bool,
+}
+
+impl Debug for FileDescriptor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FileDescriptor")
+            .field("readable", &self.readable)
+            .field("writable", &self.writable)
+            .finish()
+    }
 }
 
 pub const MAX_FDS: usize = 64;
