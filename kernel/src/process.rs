@@ -19,16 +19,16 @@ use crate::{
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
     lock::IntMutex,
     log,
-    process::trap::trapframe::Trapframe,
     process::trap::{
         interrupt_off, interrupt_on, interrupt_read,
         trampoline::{_trampoline, userret, uservec},
+        trapframe::Trapframe,
         usertrap,
     },
     read_csr,
     virtmemory::{
         self, PAGESIZE, PTE_R, PTE_W, PTE_X, TRAMPOLINE, USER_STACK_PAGES, USER_STACK_TOP, Uvm,
-        copy_out_cont,
+        copy_out, copy_out_cont,
     },
     write_csr,
 };
@@ -144,9 +144,6 @@ impl Context {
     }
 }
 
-// processes are initialized on boot (state: Unused and kstack)
-// When new process is created pid, state and pagetable are assigned.
-//
 #[derive(Debug)]
 pub struct Process {
     pub id: usize,
@@ -241,8 +238,6 @@ impl Process {
             .map_err(|()| ForkError::NoProcess)?;
         child_proc.pagetable = uvm;
 
-        // FdTable is currently process-owned. Supporting CLONE_FILES requires
-        // shared ownership of the table, so both forms currently clone it.
         child_proc.fds = self.fds.clone();
 
         let pid_bytes = (child_pid as u32).to_ne_bytes();
@@ -284,10 +279,6 @@ impl Process {
         let mut pagetree = Uvm::new()?;
         pagetree.init_proc(self)?;
 
-        // ------------------------------------------------------------
-        // Load ELF
-        // ------------------------------------------------------------
-
         let mut image_end = 0;
         for segment in elf::get_elf_segments(&img)? {
             if segment.p_type != elf::PT_LOAD {
@@ -301,10 +292,8 @@ impl Process {
                 return Err(());
             }
 
-            // ELF PT_LOAD virtual addresses need not be page aligned.  The
-            // ELF ABI instead requires their page offset to match p_offset.
-            // Map whole pages, then copy the file bytes at the exact virtual
-            // address so the leading page fragment is preserved.
+            // ELF PT_LOAD doesnt have to be page aligned
+            // map aligned pages and load
             let page_start = segment_addr & !(PAGESIZE - 1);
             let page_offset = segment_addr - page_start;
             let map_size = page_offset
@@ -321,22 +310,18 @@ impl Process {
             pagetree.load(segment_addr, elf::segment_bytes(&img, &segment).ok_or(())?)?;
         }
 
-        // ------------------------------------------------------------
-        // Stack
-        //
-        //             high addresses
-        //
-        //             strings
-        //             ...
-        //
-        //             auxv[]
-        //             envp[]
-        //             argv[]
-        //             argc
-        //
-        // ------------------------------------------------------------
-
         let heap_base = image_end;
+
+        // STACK (in reverse):
+        //
+        //     argc
+        //     argv[0]
+        //     ...
+        //     argv[argc - 1]
+        //     NULL
+        //     envp[] (NULL)
+        //     NULL
+        //     auxv (NULL)
 
         // Create userstack just below trapframe
         let stack_top = USER_STACK_TOP;
@@ -347,27 +332,13 @@ impl Process {
 
         let mut sp = stack_top;
 
-        // ------------------------------------------------------------
-        // Build argv exactly as supplied by execve. The kernel's initial
-        // process caller includes its own argv[0] as well.
-        // ------------------------------------------------------------
+        // copy args onto string
+        let mut arg_ptrs: Vec<usize> = Vec::with_capacity(argv.len());
 
-        let args = argv;
-
-        // ------------------------------------------------------------
-        // Copy argument strings onto the stack.
-        //
-        // Strings grow downward.
-        //
-        // Every string MUST be NUL terminated.
-        // ------------------------------------------------------------
-
-        let mut arg_ptrs: Vec<usize> = Vec::with_capacity(args.len());
-
-        for arg in args.iter().rev() {
+        for arg in argv.iter().rev() {
             let bytes = arg.as_bytes();
 
-            // +1 for terminating NUL.
+            // null terminate
             let size = bytes.len() + 1;
 
             if sp < stack_base + size {
@@ -378,162 +349,59 @@ impl Process {
 
             copy_out_cont(&mut pagetree, sp, bytes)?;
 
-            // Write terminating '\0'.
-            copy_out_cont(&mut pagetree, sp + bytes.len(), &[0])?;
+            // write terminating '\0'.
+            copy_out(&mut pagetree, sp + bytes.len(), 0u8)?;
 
             arg_ptrs.push(sp);
         }
 
-        // We copied arguments in reverse order.
+        // copied arguments in reverse
         arg_ptrs.reverse();
-
-        // ------------------------------------------------------------
-        // Initial stack pointer must satisfy the ABI alignment.
-        //
-        // RISC-V requires the stack pointer to be aligned to 16 bytes
-        // at a procedure-call boundary.
-        //
-        // Do NOT align each individual argument string.
-        // Align the final stack pointer.
-        // ------------------------------------------------------------
 
         sp &= !0xf;
 
-        // ------------------------------------------------------------
-        // Construct:
-        //
-        //     argc
-        //     argv[0]
-        //     ...
-        //     argv[argc - 1]
-        //     NULL
-        //     envp[]
-        //     NULL
-        //     auxv
-        //
-        // We use RV32 words, so every entry is 4 bytes.
-        // ------------------------------------------------------------
+        // We have no environment, but musl needs AT_PAGESZ from auxv.
+        let argc = argv.len();
+        let word_size = size_of::<usize>();
 
-        let argc = arg_ptrs.len();
-
-        // Number of words:
-        //
-        // argc
-        // argv pointers + NULL
-        // envp NULL
-        // AT_PAGESZ + value
-        // AT_NULL + value
-        //
-        let stack_words = 1 +                 // argc
-        (argc + 1) +        // argv + NULL
-        1 +                 // envp NULL
-        4; // AT_PAGESZ + value, AT_NULL + 0
-
-        let stack_bytes = stack_words * size_of::<u32>();
-
-        if sp < stack_base + stack_bytes {
+        // check for space
+        // argc, argv[], argv NULL, envp NULL, AT_PAGESZ, and AT_NULL.
+        let left_to_write = (argc + 7) * word_size;
+        if sp - left_to_write < stack_base {
             return Err(());
         }
 
-        sp -= stack_bytes;
-
-        // Because we aligned sp before subtracting a multiple of 4,
-        // it remains 16-byte aligned.
-        // debug_assert_eq!(sp & 0xf, 0);
-
-        let mut p = sp;
-
-        // ------------------------------------------------------------
-        // argc
-        // ------------------------------------------------------------
-
-        let argc_u32 = argc as u32;
-
-        copy_out_cont(&mut pagetree, p, &argc_u32.to_ne_bytes())?;
-
-        p += 4;
-
-        // ------------------------------------------------------------
-        // argv[]
-        // ------------------------------------------------------------
-
-        for &arg_ptr in &arg_ptrs {
-            let ptr = arg_ptr as u32;
-
-            copy_out_cont(&mut pagetree, p, &ptr.to_ne_bytes())?;
-
-            p += 4;
+        // auxv: AT_NULL, 0
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, 0usize)?;
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, 0usize)?;
+        // auxv: AT_PAGESZ, page size
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, PAGESIZE)?;
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, 6usize)?;
+        // empty envp and argv terminator
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, 0usize)?;
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, 0usize)?;
+        // argv pointers in reverse
+        for &a_ptr in arg_ptrs.iter().rev() {
+            sp -= word_size;
+            copy_out(&mut pagetree, sp, a_ptr)?;
         }
-
-        // argv NULL terminator.
-        copy_out_cont(&mut pagetree, p, &0u32.to_ne_bytes())?;
-
-        p += 4;
-
-        // ------------------------------------------------------------
-        // envp[]
-        //
-        // We currently have no environment.
-        //
-        // envp[0] = NULL
-        // ------------------------------------------------------------
-
-        copy_out_cont(&mut pagetree, p, &0u32.to_ne_bytes())?;
-
-        p += 4;
-
-        // ------------------------------------------------------------
-        // auxv
-        //
-        // Minimal auxiliary vector. musl uses AT_PAGESZ when calculating
-        // allocation sizes, so AT_NULL alone produces zero-length mmap calls.
-        //
-        //     AT_PAGESZ, page size
-        //     AT_NULL, 0
-        //
-        // AT_PAGESZ is type 6; AT_NULL is type 0.
-        // ------------------------------------------------------------
-
-        copy_out_cont(&mut pagetree, p, &6u32.to_ne_bytes())?;
-
-        p += 4;
-
-        copy_out_cont(&mut pagetree, p, &(PAGESIZE as u32).to_ne_bytes())?;
-
-        p += 4;
-
-        copy_out_cont(&mut pagetree, p, &0u32.to_ne_bytes())?;
-
-        p += 4;
-
-        copy_out_cont(&mut pagetree, p, &0u32.to_ne_bytes())?;
-
-        // ------------------------------------------------------------
-        // Enter userspace.
-        //
-        // The initial stack is now:
-        //
-        // sp -> argc
-        //       argv[0]
-        //       argv[1]
-        //       ...
-        //       NULL
-        //       envp NULL
-        //       AT_NULL
-        //       0
-        //
-        // ------------------------------------------------------------
+        // and argc
+        sp -= word_size;
+        copy_out(&mut pagetree, sp, argc)?;
 
         self.pagetable = pagetree;
         self.pagetable.heap_base = heap_base;
         self.pagetable.prog_break = heap_base;
 
+        *self.trapframe = Trapframe::default();
         self.trapframe.sp = sp;
 
-        // Do not rely on a0/a1 for argc/argv.
-        //
-        // The normal process-entry ABI gets these from the initial stack.
-        //
         self.trapframe.a0 = 0;
         self.trapframe.a1 = 0;
 
