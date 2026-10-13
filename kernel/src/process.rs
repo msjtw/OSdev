@@ -155,6 +155,7 @@ pub struct Process {
     pub context: Context,
     pub xstatus: u32,
     pub sleep_channel: Option<usize>,
+    pub wake_at: Option<u64>, // wakeup time for sleeping processes
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
@@ -177,6 +178,7 @@ impl Process {
             context: Context::default(),
             xstatus: 0,
             sleep_channel: None,
+            wake_at: None,
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
@@ -193,6 +195,7 @@ impl Process {
         self.context = Context::default();
         self.xstatus = 0;
         self.sleep_channel = None;
+        self.wake_at = None;
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
         self.fds = fd::FdTable::new();
 

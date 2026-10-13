@@ -46,6 +46,8 @@ pub const SYS_EXECVE: usize = 221;
 pub const SYS_MMAP: usize = 222;
 pub const SYS_STATX: usize = 291;
 pub const SYS_CLOCK_GETTIME64: usize = 403;
+pub const SYS_CLOCK_GETRES_TIME64: usize = 406;
+pub const SYS_CLOCK_NANOSLEEP_TIME64: usize = 407;
 pub const SYS_PPOLL_TIME64: usize = 414;
 
 // NOTE:
@@ -56,6 +58,7 @@ pub const SYS_PPOLL_TIME64: usize = 414;
 
 pub fn syscall(proc: &mut Process) {
     let sys_num = proc.trapframe.a7;
+    log::debug!("syscall: {}", sys_num);
     // let args: [u32; 6];
 
     match sys_num {
@@ -91,6 +94,8 @@ pub fn syscall(proc: &mut Process) {
         SYS_MUNMAP => sys_munmap(proc),
         SYS_STATX => sys_statx(proc),
         SYS_CLOCK_GETTIME64 => sys_clock_gettime64(proc),
+        SYS_CLOCK_GETRES_TIME64 => sys_clock_getres_time64(proc),
+        SYS_CLOCK_NANOSLEEP_TIME64 => sys_clock_nanosleep_time64(proc),
         SYS_PPOLL_TIME64 => sys_ppoll(proc),
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);

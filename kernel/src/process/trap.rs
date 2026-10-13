@@ -4,13 +4,13 @@ pub mod trapframe;
 use core::arch::naked_asm;
 
 use crate::{
+    KERNEL,
     csr::SSTATUS_SPP,
-    log,
-    kernel::syscall::syscall,
-    process::{Process, prepare_return},
-    read_csr, read_csr64,
     drivers::uart::UART_DRIVER,
-    write_csr, write_csr64,
+    kernel::syscall::syscall,
+    log,
+    process::{ProcState, Process, prepare_return},
+    read_csr, read_csr64, write_csr, write_csr64,
 };
 
 const SIE_SEIE: usize = 1 << 9;
@@ -144,7 +144,11 @@ extern "C" fn kerneltrap() {
 
         log::trace!(
             ">TRAP {:?} sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x} stval=0x{:x}",
-            pid, sepc, sstatus, scause, stval,
+            pid,
+            sepc,
+            sstatus,
+            scause,
+            stval,
         );
         // kprintln!(">TRAP interrupt: {}", interrupt_read());
         // kprintln!(">TRAP sched locks {}", (crate::CPU).interrupt_off_stack);
@@ -196,10 +200,13 @@ pub extern "C" fn usertrap() -> usize {
 
         log::trace!(
             "user>pid {:?} TRAP sepc=0x{:08x} sstatus=0b{:b} scause=0x{:x}",
-            proc.pid, sepc, sstatus, scause
+            proc.pid,
+            sepc,
+            sstatus,
+            scause
         );
-        log::debug!("user> interrupt: {}", interrupt_read());
-        log::debug!("user> sched locks {}", (crate::CPU).interrupt_off_stack);
+        // log::debug!("user> interrupt: {}", interrupt_read());
+        // log::debug!("user> sched locks {}", (crate::CPU).interrupt_off_stack);
 
         // switch to kernel trap
         let kernelvec = kernelvec as *const () as u32;
@@ -240,6 +247,23 @@ unsafe fn timer(proc: Option<&mut Process>) {
 
         // poll uart on timer
         UART_DRIVER.poll_input();
+
+        // wakeup timer sleeping processes
+        {
+            let mut kernel = KERNEL.get().unwrap().lock();
+            for sleeping_proc in &mut kernel.process_table {
+                sleeping_proc.lock.lock_manual();
+                if sleeping_proc.state == ProcState::Sleeping
+                    && sleeping_proc
+                        .wake_at
+                        .is_some_and(|wake_at| time.wrapping_sub(wake_at) as i64 >= 0)
+                {
+                    sleeping_proc.wake_at = None;
+                    sleeping_proc.state = ProcState::Runnable;
+                }
+                sleeping_proc.lock.unlock_manual();
+            }
+        }
 
         if let Some(proc) = proc {
             proc.yeld();
