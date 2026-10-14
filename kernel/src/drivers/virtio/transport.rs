@@ -51,7 +51,7 @@ pub trait Transport {
         let status = self.status() | bits;
         self.set_status(status);
     }
-    
+
     fn set_status_bits_checked(&mut self, bits: u8) -> Result<(), ()> {
         let status = self.status() | bits;
         self.set_status(status);

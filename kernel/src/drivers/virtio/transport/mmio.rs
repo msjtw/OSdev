@@ -1,31 +1,31 @@
-use crate::{drivers::virtio::status, log};
 use crate::drivers::virtio::transport::Transport;
+use crate::{drivers::virtio::status, log};
 
 // MMIO registers
-const MMIO_MAGIC:               usize = 0x000;
-const MMIO_VERSION:             usize = 0x004;
-const MMIO_DEVICE_ID:           usize = 0x008;
-const MMIO_VENDOR_ID:           usize = 0x00c;
-const MMIO_DEVICE_FEATURES:     usize = 0x010;
+const MMIO_MAGIC: usize = 0x000;
+const MMIO_VERSION: usize = 0x004;
+const MMIO_DEVICE_ID: usize = 0x008;
+const MMIO_VENDOR_ID: usize = 0x00c;
+const MMIO_DEVICE_FEATURES: usize = 0x010;
 const MMIO_DEVICE_FEATURES_SEL: usize = 0x014;
-const MMIO_DRIVER_FEATURES:     usize = 0x020;
+const MMIO_DRIVER_FEATURES: usize = 0x020;
 const MMIO_DRIVER_FEATURES_SEL: usize = 0x024;
-const MMIO_QUEUE_SEL:           usize = 0x030;
-const MMIO_QUEUE_NUM_MAX:       usize = 0x034;
-const MMIO_QUEUE_NUM:           usize = 0x038;
-const MMIO_QUEUE_READY:         usize = 0x044;
-const MMIO_QUEUE_NOTIFY:        usize = 0x050;
-const MMIO_INTERRUPT_STATUS:    usize = 0x060;
-const MMIO_INTERRUPT_ACK:       usize = 0x064;
-const MMIO_STATUS:              usize = 0x070;
-const MMIO_QUEUE_DESC_LOW:      usize = 0x080;
-const MMIO_QUEUE_DESC_HIGH:     usize = 0x084;
-const MMIO_QUEUE_DRIVER_LOW:    usize = 0x090;
-const MMIO_QUEUE_DRIVER_HIGH:   usize = 0x094;
-const MMIO_QUEUE_DEVICE_LOW:    usize = 0x0a0;
-const MMIO_QUEUE_DEVICE_HIGH:   usize = 0x0a4;
-const MMIO_CONFIG_GENERATION:   usize = 0x0fc;
-const MMIO_CONFIG:              usize = 0x100;
+const MMIO_QUEUE_SEL: usize = 0x030;
+const MMIO_QUEUE_NUM_MAX: usize = 0x034;
+const MMIO_QUEUE_NUM: usize = 0x038;
+const MMIO_QUEUE_READY: usize = 0x044;
+const MMIO_QUEUE_NOTIFY: usize = 0x050;
+const MMIO_INTERRUPT_STATUS: usize = 0x060;
+const MMIO_INTERRUPT_ACK: usize = 0x064;
+const MMIO_STATUS: usize = 0x070;
+const MMIO_QUEUE_DESC_LOW: usize = 0x080;
+const MMIO_QUEUE_DESC_HIGH: usize = 0x084;
+const MMIO_QUEUE_DRIVER_LOW: usize = 0x090;
+const MMIO_QUEUE_DRIVER_HIGH: usize = 0x094;
+const MMIO_QUEUE_DEVICE_LOW: usize = 0x0a0;
+const MMIO_QUEUE_DEVICE_HIGH: usize = 0x0a4;
+const MMIO_CONFIG_GENERATION: usize = 0x0fc;
+const MMIO_CONFIG: usize = 0x100;
 
 pub struct Mmio {
     pub base_addr: usize,
@@ -42,39 +42,22 @@ impl Mmio {
 
     #[inline]
     fn read_u8(&self, offset: usize) -> u8 {
-        unsafe {
-            core::ptr::read_volatile(
-                (self.base_addr + offset) as *const u8,
-            )
-        }
+        unsafe { core::ptr::read_volatile((self.base_addr + offset) as *const u8) }
     }
 
     #[inline]
     fn read_u16(&self, offset: usize) -> u16 {
-        unsafe {
-            core::ptr::read_volatile(
-                (self.base_addr + offset) as *const u16,
-            )
-        }
+        unsafe { core::ptr::read_volatile((self.base_addr + offset) as *const u16) }
     }
 
     #[inline]
     fn read_u32(&self, offset: usize) -> u32 {
-        unsafe {
-            core::ptr::read_volatile(
-                (self.base_addr + offset) as *const u32,
-            )
-        }
+        unsafe { core::ptr::read_volatile((self.base_addr + offset) as *const u32) }
     }
 
     #[inline]
     fn write_u32(&self, offset: usize, value: u32) {
-        unsafe {
-            core::ptr::write_volatile(
-                (self.base_addr + offset) as *mut u32,
-                value,
-            )
-        }
+        unsafe { core::ptr::write_volatile((self.base_addr + offset) as *mut u32, value) }
     }
 }
 
@@ -86,7 +69,6 @@ impl Transport for Mmio {
     fn device_id(&self) -> u32 {
         self.read_u32(MMIO_DEVICE_ID)
     }
-
 
     fn read_config_u8(&self, offset: usize) -> u8 {
         self.read_u8(MMIO_CONFIG + offset)
@@ -116,7 +98,6 @@ impl Transport for Mmio {
         let hi = self.read_u32(MMIO_DEVICE_FEATURES) as u64;
 
         (hi << 32) | lo
-
     }
 
     fn set_driver_features(&mut self, features: u64) {
@@ -167,7 +148,6 @@ impl Transport for Mmio {
     }
 }
 
-
 /*
 pub struct Legacy {
     mmio_base: usize,
@@ -181,7 +161,7 @@ impl Legacy {
                 unsafe {
                     core::ptr::read_volatile(
                         (mmio_base + $offset) as *const u32,
-                    ) 
+                    )
                 }
             }}
         }
@@ -192,7 +172,7 @@ impl Legacy {
                     core::ptr::write_volatile(
                         (mmio_base + $offset) as *mut u32,
                         $value,
-                    ) 
+                    )
                 }
             }}
         }

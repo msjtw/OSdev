@@ -3,12 +3,13 @@ pub mod syscall;
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, KSTACK, process::{Context, KERNEL_STACK_PAGES, ProcState, Process, forkret, trap::{interrupt_off, interrupt_on, interrupt_read, trapframe::Trapframe}}, virtmemory::{self, Kvm, PAGESIZE},
+    FRAME_ALLOCATOR, KSTACK,
+    process::{
+        Context, KERNEL_STACK_PAGES, ProcState, Process, forkret,
+        trap::{interrupt_off, interrupt_on, interrupt_read, trapframe::Trapframe},
+    },
+    virtmemory::{self, Kvm, PAGESIZE},
 };
-
-pub const STDIN_CHANNEL: usize = usize::MAX;
-
-
 
 // Holds current execution state
 #[derive(Default)]
@@ -81,6 +82,7 @@ impl Kernel {
             if p.state == ProcState::Unused {
                 self.pid += 1;
                 p.pid = Some(self.pid);
+                p.pgid = p.pid;
                 p.state = ProcState::Used;
                 p.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
                 unsafe { p.lock.lock_manual() };

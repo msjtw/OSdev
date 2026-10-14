@@ -1,10 +1,15 @@
 mod sys_file;
 mod sys_proc;
+mod sys_signals;
 
 use crate::{
     kernel::syscall::{
-        sys_file::{sys_close, sys_dup, sys_dup3, sys_fcntl, sys_getdents64, sys_ioctl, sys_openat, sys_read, sys_statx, sys_write, sys_writev},
+        sys_file::{
+            sys_close, sys_dup, sys_dup3, sys_fcntl, sys_getdents64, sys_ioctl, sys_openat,
+            sys_read, sys_statx, sys_write, sys_writev,
+        },
         sys_proc::*,
+        sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask},
     },
     log,
     process::Process,
@@ -31,6 +36,9 @@ pub const SYS_RT_SIGPROCMASK: usize = 135;
 pub const SYS_RT_SIGACTION: usize = 134;
 pub const SYS_SETGID: usize = 144;
 pub const SYS_SETUID: usize = 146;
+pub const SYS_SETPGID: usize = 154;
+pub const SYS_GETPGID: usize = 155;
+pub const SYS_SETSID: usize = 157;
 pub const SYS_GETUID: usize = 174;
 pub const SYS_GETEUID: usize = 175;
 pub const SYS_GETGID: usize = 176;
@@ -81,6 +89,9 @@ pub fn syscall(proc: &mut Process) {
         SYS_GETPPID => sys_getppid(proc),
         SYS_SETGID => sys_setgid(proc),
         SYS_SETUID => sys_setuid(proc),
+        SYS_SETPGID => sys_setpgid(proc),
+        SYS_GETPGID => sys_getpgid(proc),
+        SYS_SETSID => sys_setsid(proc),
         SYS_GETUID | SYS_GETEUID | SYS_GETGID | SYS_GETEGID => sys_get_root_identity(proc),
         SYS_CLONE => sys_clone(proc),
         SYS_EXECVE => sys_exec(proc),

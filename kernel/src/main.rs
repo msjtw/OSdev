@@ -102,6 +102,9 @@ pub extern "C" fn main() -> ! {
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
+        user_p0.fds = process::fd::FdTable::new_with_tty();
+        user_p0.sid = user_p0.pid;
+        process::tty::TTY::set_controlling_session(user_p0.sid.unwrap());
         user_p0
             .kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])
             .expect("failed to execute /bin/busybox from ext4");

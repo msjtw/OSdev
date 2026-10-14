@@ -6,10 +6,9 @@ use core::arch::naked_asm;
 use crate::{
     KERNEL,
     csr::SSTATUS_SPP,
-    drivers::uart::UART_DRIVER,
     kernel::syscall::syscall,
     log,
-    process::{ProcState, Process, prepare_return},
+    process::{ProcState, Process, prepare_return, signals},
     read_csr, read_csr64, write_csr, write_csr64,
 };
 
@@ -232,6 +231,7 @@ pub extern "C" fn usertrap() -> usize {
                 scause, stval, sepc
             ),
         }
+        signals::deliver_pending(proc);
         prepare_return(proc);
         let satp = proc.pagetable.get_satp();
         satp.into()
@@ -246,7 +246,7 @@ unsafe fn timer(proc: Option<&mut Process>) {
         write_csr64!(stimecmp, next);
 
         // poll uart on timer
-        UART_DRIVER.poll_input();
+        crate::process::tty::TTY::get().poll_input();
 
         // wakeup timer sleeping processes
         {

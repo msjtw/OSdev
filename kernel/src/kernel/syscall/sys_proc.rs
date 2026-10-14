@@ -1,8 +1,12 @@
 use alloc::{string::String, vec::Vec};
 
 use crate::{
-    log,
-    process::{ForkError, Process, fd::{Errno, POLLIN, POLLOUT, POLLNVAL}},
+    KERNEL, log,
+    process::{
+        ForkError, Process,
+        fd::{Errno, POLLIN, POLLNVAL, POLLOUT},
+        signals,
+    },
     read_csr64,
     virtmemory::{
         PAGESIZE, PTE_R, PTE_W, PTE_X, VmError, copy_in, copy_in_str, copy_out, copy_out_cont,
@@ -69,8 +73,8 @@ pub fn sys_clock_getres_time64(proc: &mut Process) {
     };
 }
 
-/// Linux RV32 clock_nanosleep_time64(2). Processes sleep until the timer
-/// interrupt observes that their absolute time-counter deadline has passed.
+//  suspends the execution of the calling thread until either
+//  at least the time specified in *duration has elapsed or signal
 pub fn sys_clock_nanosleep_time64(proc: &mut Process) {
     const TIMER_ABSTIME: usize = 1;
 
@@ -78,9 +82,7 @@ pub fn sys_clock_nanosleep_time64(proc: &mut Process) {
     let flags = proc.trapframe.a1;
     let request_addr = proc.trapframe.a2;
 
-    if (clock_id != CLOCK_REALTIME && clock_id != CLOCK_MONOTONIC)
-        || flags & !TIMER_ABSTIME != 0
-    {
+    if (clock_id != CLOCK_REALTIME && clock_id != CLOCK_MONOTONIC) || flags & !TIMER_ABSTIME != 0 {
         proc.trapframe.a0 = Errno::EINVAL.into();
         return;
     }
@@ -101,9 +103,8 @@ pub fn sys_clock_nanosleep_time64(proc: &mut Process) {
 
     let request_ticks = match (request.tv_sec as u64)
         .checked_mul(TIMEBASE_HZ)
-        .and_then(|ticks| {
-            ticks.checked_add(request.tv_nsec as u64 * TIMEBASE_HZ / 1_000_000_000)
-        }) {
+        .and_then(|ticks| ticks.checked_add(request.tv_nsec as u64 * TIMEBASE_HZ / 1_000_000_000))
+    {
         Some(ticks) => ticks,
         None => {
             proc.trapframe.a0 = Errno::EINVAL.into();
@@ -117,8 +118,7 @@ pub fn sys_clock_nanosleep_time64(proc: &mut Process) {
         now.wrapping_add(request_ticks)
     };
 
-    // An already-expired absolute deadline and a zero relative duration do
-    // not need a scheduler round trip.
+    // no need to sleep for already expired timer
     if now.wrapping_sub(wake_at) as i64 >= 0 {
         proc.trapframe.a0 = 0;
         return;
@@ -129,7 +129,13 @@ pub fn sys_clock_nanosleep_time64(proc: &mut Process) {
     proc.state = crate::process::ProcState::Sleeping;
     unsafe { proc.sleep_locked() };
 
-    proc.trapframe.a0 = 0;
+    // Goooooood Morning Vietnam
+    proc.wake_at = None;
+    proc.trapframe.a0 = if signals::has_unblocked_pending(proc) {
+        Errno::EINTR.into()
+    } else {
+        0
+    };
 }
 
 //  Returns the real user ID of the calling process
@@ -145,6 +151,98 @@ pub fn sys_getpid(proc: &mut Process) {
 // Return the parent process ID of the calling process.
 pub fn sys_getppid(proc: &mut Process) {
     proc.trapframe.a0 = proc.parent.unwrap_or(0);
+}
+
+// setpgid()  sets  the PGID of the process specified by pid to pgid.
+pub fn sys_setpgid(proc: &mut Process) {
+    let caller_pid = proc.pid.expect("process without pid");
+
+    // If pid is zero, then the process ID of the calling process is used.
+    let target_pid = if proc.trapframe.a0 == 0 {
+        caller_pid
+    } else {
+        proc.trapframe.a0
+    };
+
+    // If pgid is zero, then the  PGID  of  the process  specified
+    // by pid is made the same as its process ID.
+    let requested_pgid = if proc.trapframe.a1 == 0 {
+        target_pid
+    } else {
+        proc.trapframe.a1
+    };
+
+    let mut kernel = KERNEL.get().unwrap().lock();
+    let Some(target_index) = kernel
+        .process_table
+        .iter()
+        .position(|process| process.pid == Some(target_pid))
+    else {
+        proc.trapframe.a0 = Errno::ESRCH.into();
+        return;
+    };
+
+    let target = &kernel.process_table[target_index];
+    if target_pid != caller_pid && target.parent != Some(caller_pid) {
+        proc.trapframe.a0 = Errno::EPERM.into();
+        return;
+    }
+    if requested_pgid != target_pid
+        && !kernel
+            .process_table
+            .iter()
+            .any(|process| process.pgid == Some(requested_pgid))
+    {
+        proc.trapframe.a0 = Errno::EPERM.into();
+        return;
+    }
+
+    kernel.process_table[target_index].pgid = Some(requested_pgid);
+    proc.trapframe.a0 = 0;
+}
+
+// getpgid() returns the PGID of the process specified by pid.
+pub fn sys_getpgid(proc: &mut Process) {
+    // If pid is zero, the process ID of the calling process is used.
+    let target_pid = if proc.trapframe.a0 == 0 {
+        proc.pid.expect("process without pid")
+    } else {
+        proc.trapframe.a0
+    };
+
+    proc.trapframe.a0 = match KERNEL
+        .get()
+        .unwrap()
+        .lock()
+        .process_table
+        .iter()
+        .find(|process| process.pid == Some(target_pid))
+        .and_then(|process| process.pgid)
+    {
+        Some(pgid) => pgid,
+        None => Errno::ESRCH.into(),
+    };
+}
+
+// setsid()  creates  a  new  session if the calling process is not a process group leader.
+// The calling process is the leader of the new session.
+pub fn sys_setsid(proc: &mut Process) {
+    let pid = proc.pid.expect("process without pid");
+    {
+        let kernel = KERNEL.get().unwrap().lock();
+        if kernel
+            .process_table
+            .iter()
+            .any(|process| process.pgid == Some(pid))
+        {
+            proc.trapframe.a0 = Errno::EPERM.into();
+            return;
+        }
+    }
+
+    proc.sid = Some(pid);
+    proc.pgid = Some(pid);
+    proc.trapframe.a0 = pid;
 }
 
 // Return a null-terminated string containing an absolute pathname
@@ -199,34 +297,6 @@ pub fn sys_uname(proc: &mut Process) {
     proc.trapframe.a0 = match copy_out(&mut proc.pagetable, proc.trapframe.a0, uts) {
         Ok(()) => 0,
         Err(()) => Errno::EFAULT.into(),
-    };
-}
-
-// The  sigaction()  system call is used to change the action taken by a process
-// on receipt of a specific signal.
-pub fn sys_rt_sigaction(proc: &mut Process) {
-    const RV32_SIGSET_SIZE: usize = 8;
-    const RV32_SIGACTION_SIZE: usize = 20;
-
-    let _signum = proc.trapframe.a0;
-    let _act_addr = proc.trapframe.a1;
-    let oldact_addr = proc.trapframe.a2;
-    let sigsetsize = proc.trapframe.a3;
-
-    if sigsetsize != RV32_SIGSET_SIZE {
-        proc.trapframe.a0 = Errno::EINVAL.into();
-        return;
-    }
-
-    // Signal delivery is not implemented yet.  Report an empty previous
-    // disposition and accept the requested one so BusyBox can initialize.
-    proc.trapframe.a0 = if oldact_addr == 0 {
-        0
-    } else {
-        match copy_out_cont(&mut proc.pagetable, oldact_addr, &[0; RV32_SIGACTION_SIZE]) {
-            Ok(()) => 0,
-            Err(()) => Errno::EFAULT.into(),
-        }
     };
 }
 
@@ -512,10 +582,6 @@ pub fn sys_exit(proc: &mut Process) {
 
 pub fn sys_gettid(proc: &mut Process) {
     proc.trapframe.a0 = proc.pid.expect("Process with no pid");
-}
-
-pub fn sys_rt_sigprocmask(proc: &mut Process) {
-    proc.trapframe.a0 = 0;
 }
 
 pub fn sys_set_tid_address(proc: &mut Process) {

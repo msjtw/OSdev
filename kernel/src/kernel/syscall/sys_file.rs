@@ -1,7 +1,9 @@
 use crate::{
     fs, log,
-    process::Process,
-    process::fd::Errno,
+    process::{
+        Process,
+        fd::{Errno, FileDescriptor},
+    },
     virtmemory::{copy_in, copy_in_str, copy_out},
 };
 use alloc::sync::Arc;
@@ -135,6 +137,8 @@ pub fn sys_openat(proc: &mut Process) {
 
     const O_ACCMODE: usize = 3;
     const O_RDONLY: usize = 0;
+    const O_WRONLY: usize = 1;
+    const O_RDWR: usize = 2;
     const O_CREAT: usize = 0x40;
     const O_TRUNC: usize = 0x200;
 
@@ -151,10 +155,7 @@ pub fn sys_openat(proc: &mut Process) {
                 flags,
                 proc.trapframe.a3
             );
-            if dirfd != AT_FDCWD
-                || flags & O_ACCMODE != O_RDONLY
-                || flags & (O_CREAT | O_TRUNC) != 0
-            {
+            if dirfd != AT_FDCWD || flags & (O_CREAT | O_TRUNC) != 0 {
                 proc.trapframe.a0 = Errno::EROFS.into();
                 return;
             }
@@ -174,8 +175,14 @@ pub fn sys_openat(proc: &mut Process) {
                 }
             };
 
+            // TODO: currently only read only, no journaling
+            if flags & O_ACCMODE != O_RDONLY {
+                proc.trapframe.a0 = Errno::EROFS.into();
+                return;
+            }
+
             proc.trapframe.a0 = match fs::open_file(&path) {
-                Ok(target) => match proc.fds.push(Arc::new(crate::process::fd::FileDescriptor {
+                Ok(target) => match proc.fds.push(Arc::new(FileDescriptor {
                     target,
                     readable: true,
                     writable: false,

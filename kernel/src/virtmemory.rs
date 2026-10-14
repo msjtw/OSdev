@@ -25,7 +25,9 @@ pub const PAGESIZE: usize = 4 * 1024;
 
 pub fn align_up(value: usize, alignment: usize) -> Option<usize> {
     let adjustment = alignment.checked_sub(1)?;
-    value.checked_add(adjustment).map(|value| value / alignment * alignment)
+    value
+        .checked_add(adjustment)
+        .map(|value| value / alignment * alignment)
 }
 
 const RAMSIZE: usize = 62 * 1024 * 1024;
@@ -585,7 +587,12 @@ impl Uvm {
     }
 
     // Allocate an mapping in the mmap region and return its base.
-    pub fn map_anonymous(&mut self, addr: usize, length: usize, perm: usize) -> Result<usize, VmError> {
+    pub fn map_anonymous(
+        &mut self,
+        addr: usize,
+        length: usize,
+        perm: usize,
+    ) -> Result<usize, VmError> {
         if addr != 0 || length == 0 || perm == 0 {
             return Err(VmError::Invalid);
         }

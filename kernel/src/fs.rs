@@ -1,7 +1,7 @@
 use alloc::{sync::Arc, vec, vec::Vec};
 use core::cmp::min;
 
-use ext4_rs::{BlockDevice as Ext4BlockDevice, Ext4, BLOCK_SIZE};
+use ext4_rs::{BLOCK_SIZE, BlockDevice as Ext4BlockDevice, Ext4};
 use spin::Once;
 
 use crate::{
@@ -9,8 +9,8 @@ use crate::{
     lock::IntMutex,
     log,
     process::{
-        fd::{Errno, FileOps},
         Process,
+        fd::{Errno, FileOps},
     },
     virtmemory::copy_out_cont,
 };
@@ -78,12 +78,10 @@ impl LinuxDirent64<'_> {
         bytes[8..16].copy_from_slice(&self.next_offset.to_le_bytes());
         bytes[16..18].copy_from_slice(&(record_len as u16).to_le_bytes());
         bytes[18] = self.file_type;
-        bytes[Self::HEADER_LEN..Self::HEADER_LEN + self.name.len()]
-            .copy_from_slice(self.name);
+        bytes[Self::HEADER_LEN..Self::HEADER_LEN + self.name.len()].copy_from_slice(self.name);
         bytes
     }
 }
-
 
 impl FileOps for Ext4File {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {

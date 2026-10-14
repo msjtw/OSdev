@@ -7,6 +7,9 @@ use crate::process::Process;
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
     EPERM,
+    EINTR,
+    ESRCH,
+    ENXIO,
     EBADF,
     EFAULT,
     EINVAL,
@@ -29,6 +32,9 @@ impl Into<usize> for Errno {
     fn into(self) -> usize {
         let code = match self {
             Self::EPERM => 1,
+            Self::EINTR => 4,
+            Self::ESRCH => 3,
+            Self::ENXIO => 6,
             Self::ENOENT => 2,
             Self::ENOTDIR => 20,
             Self::EISDIR => 21,
@@ -92,8 +98,11 @@ pub struct FdTable(Vec<Option<Arc<FileDescriptor>>>);
 
 impl FdTable {
     pub fn new() -> Self {
-        // FIX: processes shoudl share the tty
-        let tty: Arc<dyn FileOps> = Arc::new(super::tty::TTY::new());
+        Self(alloc::vec![])
+    }
+
+    pub fn new_with_tty() -> Self {
+        let tty: Arc<dyn FileOps> = super::tty::TTY::get();
 
         Self(alloc::vec![
             Some(Arc::new(FileDescriptor {

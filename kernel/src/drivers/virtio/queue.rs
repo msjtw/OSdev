@@ -1,6 +1,6 @@
 use core::ptr;
-use core::sync::atomic::fence;
 use core::sync::atomic::Ordering;
+use core::sync::atomic::fence;
 
 #[repr(C, align(16))]
 pub struct DescArea<const N: usize> {
@@ -12,7 +12,6 @@ pub struct DriverArea<const N: usize> {
     pub flags: u16,
     pub idx: u16,
     pub ring: [u16; N],
-
     // pub avail_event: u16,
 }
 
@@ -21,7 +20,6 @@ pub struct DeviceArea<const N: usize> {
     pub flags: u16,
     pub idx: u16,
     pub ring: [DeviceAreaElem; N],
-
     // pub avail_event: u16,
 }
 
@@ -31,7 +29,6 @@ pub struct DeviceAreaElem {
     pub id: u32,
     pub len: u32,
 }
-
 
 #[repr(C)]
 pub struct SplitQueue<const N: usize> {
@@ -44,10 +41,7 @@ pub struct SplitQueue<const N: usize> {
 
 impl<const N: usize> SplitQueue<N> {
     pub const fn new() -> Self {
-        const EMPTY_DEV_AREA_ELEM: DeviceAreaElem = DeviceAreaElem {
-            id: 0,
-            len: 0,
-        };
+        const EMPTY_DEV_AREA_ELEM: DeviceAreaElem = DeviceAreaElem { id: 0, len: 0 };
 
         Self {
             desc_area: DescArea {
@@ -92,7 +86,9 @@ impl<const N: usize> SplitQueue<N> {
 
     pub fn desc(&mut self, idx: usize) -> DescBuilder<'_> {
         self.desc_area.entries[idx] = Desc::new();
-        DescBuilder { desc: &mut self.desc_area.entries[idx] }
+        DescBuilder {
+            desc: &mut self.desc_area.entries[idx],
+        }
     }
 
     pub fn push(&mut self, head: u16) {
@@ -100,26 +96,18 @@ impl<const N: usize> SplitQueue<N> {
         let slot = idx as usize % N;
 
         unsafe {
-            ptr::write_volatile(
-                &mut self.driver_area.ring[slot],
-                head,
-            );
+            ptr::write_volatile(&mut self.driver_area.ring[slot], head);
         }
 
         fence(Ordering::Release);
 
         unsafe {
-            ptr::write_volatile(
-                &mut self.driver_area.idx,
-                idx.wrapping_add(1),
-            );
+            ptr::write_volatile(&mut self.driver_area.idx, idx.wrapping_add(1));
         }
     }
 
     pub fn pop_optional(&mut self) -> Option<DeviceAreaElem> {
-        let device_idx = unsafe {
-            ptr::read_volatile(&self.device_area.idx)
-        };
+        let device_idx = unsafe { ptr::read_volatile(&self.device_area.idx) };
 
         if device_idx == self.last_dev_area_idx {
             return None;
@@ -128,10 +116,8 @@ impl<const N: usize> SplitQueue<N> {
         fence(Ordering::Acquire);
 
         let slot = self.last_dev_area_idx as usize % N;
-        
-        let elem = unsafe {
-            ptr::read_volatile(&self.device_area.ring[slot])
-        };
+
+        let elem = unsafe { ptr::read_volatile(&self.device_area.ring[slot]) };
 
         self.last_dev_area_idx = self.last_dev_area_idx.wrapping_add(1);
 
@@ -169,9 +155,7 @@ pub struct DescBuilder<'a> {
 
 impl<'a> DescBuilder<'a> {
     pub fn addr<T: ?Sized>(mut self, value: &T) -> Self {
-        self.desc.addr =
-            core::ptr::from_ref(value)
-                .cast::<u8>() as usize as u64;
+        self.desc.addr = core::ptr::from_ref(value).cast::<u8>() as usize as u64;
         self
     }
 
@@ -180,13 +164,13 @@ impl<'a> DescBuilder<'a> {
         self.desc.addr = value as u64;
         self
     }
-    
+
     #[inline]
     pub fn len(mut self, value: usize) -> Self {
         self.desc.len = value as u32;
         self
     }
-    
+
     #[inline]
     pub fn len_from_type<T>(mut self) -> Self {
         self.desc.len = core::mem::size_of::<T>() as u32;

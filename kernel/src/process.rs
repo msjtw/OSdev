@@ -1,8 +1,9 @@
 mod elf;
 pub mod fd;
 pub mod pipe;
+pub mod signals;
 pub mod trap;
-mod tty;
+pub(crate) mod tty;
 
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -146,11 +147,13 @@ impl Context {
 
 #[derive(Debug)]
 pub struct Process {
-    pub id: usize,
-    pub pid: Option<usize>,
+    pub id: usize,           // process table index
+    pub pid: Option<usize>,  // classic pid
+    pub pgid: Option<usize>, // process group id
+    pub sid: Option<usize>,  // session id
     pub state: ProcState,
-    pub kstack: usize, // virt addr of kernel stack page
-    pub parent: Option<usize>,
+    pub kstack: usize,              // virt addr of kernel stack page
+    pub parent: Option<usize>,      // parent's pid
     pub pagetable: virtmemory::Uvm, // user virt pagetable
     pub context: Context,
     pub xstatus: u32,
@@ -159,6 +162,11 @@ pub struct Process {
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
     pub lock: IntMutex<()>,
     pub quants: usize,
+
+    // signals
+    pub pending_signals: u64,
+    pub blocked_signals: u64,
+    pub signal_actions: [signals::SigAction; signals::SIGNAL_COUNT],
 
     // Linux leaves slots after close, so a table entry becomes None while its
     // index remains a valid descriptor number for later reuse.
@@ -171,6 +179,8 @@ impl Process {
         Ok(Process {
             id: n,
             pid: None,
+            pgid: None,
+            sid: None,
             state: ProcState::default(),
             kstack: KSTACK!(n),
             parent: None,
@@ -179,6 +189,9 @@ impl Process {
             xstatus: 0,
             sleep_channel: None,
             wake_at: None,
+            pending_signals: 0,
+            blocked_signals: 0,
+            signal_actions: [signals::SigAction::default(); signals::SIGNAL_COUNT],
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
@@ -189,6 +202,8 @@ impl Process {
 
     pub fn free(&mut self) -> Result<(), ()> {
         self.pid = None;
+        self.pgid = None;
+        self.sid = None;
         self.state = ProcState::Unused;
         self.parent = None;
         self.pagetable = virtmemory::Uvm::new()?;
@@ -196,6 +211,9 @@ impl Process {
         self.xstatus = 0;
         self.sleep_channel = None;
         self.wake_at = None;
+        self.pending_signals = 0;
+        self.blocked_signals = 0;
+        self.signal_actions = [signals::SigAction::default(); signals::SIGNAL_COUNT];
         self.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);
         self.fds = fd::FdTable::new();
 
@@ -234,6 +252,10 @@ impl Process {
         let mut kernel = crate::KERNEL.get().unwrap().lock();
         let child_proc = kernel.allocproc().ok_or(ForkError::NoProcess)?;
         child_proc.trapframe = Box::new_in((*self.trapframe).clone(), &FRAME_ALLOCATOR);
+        child_proc.pgid = self.pgid;
+        child_proc.sid = self.sid;
+        child_proc.blocked_signals = self.blocked_signals;
+        child_proc.signal_actions = self.signal_actions;
         let child_pid = child_proc.pid.ok_or(ForkError::NoProcess)?;
 
         let mut uvm = self.pagetable.clone();
