@@ -2,11 +2,78 @@ use crate::{
     fs, log,
     process::{
         Process,
-        fd::{Errno, FileDescriptor},
+        fd::{Errno, FileDescriptor, POLLIN, POLLNVAL, POLLOUT},
     },
-    virtmemory::{copy_in, copy_in_str, copy_out},
+    virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 use alloc::sync::Arc;
+
+pub fn sys_ppoll(proc: &mut Process) {
+    const MAX_POLL_FDS: usize = 64; // only for safety
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct PollFd {
+        fd: i32,
+        events: i16,
+        revents: i16,
+    }
+
+    let fds_addr = proc.trapframe.a0;
+    let nfds = proc.trapframe.a1;
+    if nfds > MAX_POLL_FDS {
+        proc.trapframe.a0 = Errno::EINVAL.into();
+        return;
+    }
+
+    let mut ready = 0;
+    for index in 0..nfds {
+        let Some(addr) = fds_addr.checked_add(index * core::mem::size_of::<PollFd>()) else {
+            proc.trapframe.a0 = Errno::EFAULT.into();
+            return;
+        };
+        let mut pollfd = match copy_in::<PollFd>(&mut proc.pagetable, addr) {
+            Ok(pollfd) => pollfd,
+            Err(()) => {
+                proc.trapframe.a0 = Errno::EFAULT.into();
+                return;
+            }
+        };
+
+        pollfd.revents = match usize::try_from(pollfd.fd)
+            .ok()
+            .and_then(|fd| proc.fds.get(fd).ok())
+        {
+            Some(descriptor) => {
+                let mut requested = pollfd.events;
+                if !descriptor.readable {
+                    requested &= !POLLIN;
+                }
+                if !descriptor.writable {
+                    requested &= !POLLOUT;
+                }
+                descriptor.target.poll(requested)
+            }
+            None => POLLNVAL,
+        };
+
+        if pollfd.revents != 0 {
+            ready += 1;
+        }
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                (&pollfd as *const PollFd).cast::<u8>(),
+                core::mem::size_of::<PollFd>(),
+            )
+        };
+        if copy_out_cont(&mut proc.pagetable, addr, bytes).is_err() {
+            proc.trapframe.a0 = Errno::EFAULT.into();
+            return;
+        }
+    }
+
+    proc.trapframe.a0 = ready;
+}
 
 // FIX: this soudl be flags from open
 

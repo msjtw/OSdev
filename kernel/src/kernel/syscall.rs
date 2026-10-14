@@ -1,15 +1,19 @@
 mod sys_file;
+mod sys_memory;
 mod sys_proc;
 mod sys_signals;
+mod sys_time;
 
 use crate::{
     kernel::syscall::{
         sys_file::{
             sys_close, sys_dup, sys_dup3, sys_fcntl, sys_getdents64, sys_ioctl, sys_openat,
-            sys_read, sys_statx, sys_write, sys_writev,
+            sys_ppoll, sys_read, sys_statx, sys_write, sys_writev,
         },
+        sys_memory::{sys_brk, sys_mmap, sys_munmap},
         sys_proc::*,
         sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask},
+        sys_time::{sys_clock_getres_time64, sys_clock_gettime64, sys_clock_nanosleep_time64},
     },
     log,
     process::Process,

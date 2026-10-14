@@ -16,14 +16,12 @@ impl UartDriver {
         Self
     }
 
-    /// Drain raw bytes from the UART receive FIFO.
-    pub fn drain_input(&self, mut consume: impl FnMut(u8)) {
+    // Drain raw bytes from the UART receive FIFO.
+    pub fn drain_input(&self, mut consumer: impl FnMut(u8)) {
         let uart = UART as *const u8;
 
-        // Reading the receiver holding register consumes one byte. Drain all
-        // bytes queued in the UART receive FIFO before this tick ends.
         while unsafe { read_volatile(uart.add(UART_LSR)) } & UART_LSR_DATA_READY != 0 {
-            consume(unsafe { read_volatile(uart.add(UART_RHR)) });
+            consumer(unsafe { read_volatile(uart.add(UART_RHR)) });
         }
     }
 

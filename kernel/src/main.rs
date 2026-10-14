@@ -91,7 +91,7 @@ pub extern "C" fn main() -> ! {
         kernel.init().expect("Kernel init fail");
         fs::mount_root().expect("ext4 root mount failed");
 
-        kernel.initproc(4).unwrap();
+        kernel.initproc(16).unwrap();
         kernel
             .kvm
             .as_mut()
