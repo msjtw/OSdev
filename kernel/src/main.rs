@@ -28,12 +28,6 @@ use crate::process::trap::init_trap;
 use crate::process::trap::trampoline::{userret, uservec};
 use crate::virtmemory::RAMEND;
 
-// const PRIME: &[u8] = include_bytes!("../../user/_prime");
-// const INIT: &[u8] = include_bytes!("../../user/_init");
-// const PIPE1: &[u8] = include_bytes!("../../user/_pipe1");
-// const PIPE2: &[u8] = include_bytes!("../../user/_pipe2");
-// const FORK_PRIME: &[u8] = include_bytes!("../../user/_fork_prime");
-
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
 
@@ -91,7 +85,7 @@ pub extern "C" fn main() -> ! {
         kernel.init().expect("Kernel init fail");
         fs::mount_root().expect("ext4 root mount failed");
 
-        kernel.initproc(16).unwrap();
+        kernel.initproc(32).unwrap();
         kernel
             .kvm
             .as_mut()

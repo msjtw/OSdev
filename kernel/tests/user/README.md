@@ -48,3 +48,20 @@ Path-length, inconsistent segment-size, reserved-address, and invalid-entry test
 are deliberately excluded:
 the project assumes conventional toolchain-generated ELF images rather than
 comprehensive validation of malformed executables.
+
+## Fixed resource limits (M-008 subset)
+
+```sh
+uv run pytest tests/test_resource_limits.py -v
+```
+
+`resource_limits.S` checks a 32-slot system process table (30 children plus
+the shell and test parent), `EAGAIN` on exhaustion, reaping, and successful
+subsequent cloning. The FD case fills slots 3--63, checks `EMFILE` for open
+and dup, rejects dup3 to slot 64, and verifies close/reuse through open, dup,
+and dup3, including reuse of the last slot. Both cases leave the shell usable.
+These tests do not cover general memory exhaustion or allocation failures.
+
+The same runner also checks `WNOHANG` with a child still sleeping, followed by
+a successful blocking wait. Startup-stack checks execute with argc 1--4 and
+require a 16-byte-aligned SP with argc and argv still accessible at entry.

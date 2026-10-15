@@ -396,8 +396,6 @@ impl Process {
         // copied arguments in reverse
         arg_ptrs.reverse();
 
-        sp &= !0xf;
-
         // We have no environment, but musl needs AT_PAGESZ from auxv.
         let argc = argv.len();
         let word_size = size_of::<usize>();
@@ -406,9 +404,13 @@ impl Process {
         // argc, argv[], argv NULL, envp NULL, AT_PAGESZ, and AT_NULL.
         let left_to_write = argc.checked_add(7)
             .and_then(|words| words.checked_mul(word_size)).ok_or(Errno::E2BIG)?;
-        if sp.checked_sub(left_to_write).ok_or(Errno::E2BIG)? < stack_base {
+        let final_sp = sp.checked_sub(left_to_write).ok_or(Errno::E2BIG)? & !0xf;
+        if final_sp < stack_base {
             return Err(Errno::E2BIG);
         }
+        // Place padding above the startup frame so argc remains at the final,
+        // 16-byte-aligned SP rather than aligning only the argument strings.
+        sp = final_sp + left_to_write;
 
         // auxv: AT_NULL, 0
         sp -= word_size;
@@ -517,7 +519,7 @@ impl Process {
                     }
                 }
 
-                if zombie_pid.is_none() && has_kids {
+                if zombie_pid.is_none() && has_kids && !nohang {
                     let parent = table
                         .iter_mut()
                         .find(|proc| proc.pid == parent_pid)

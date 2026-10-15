@@ -142,7 +142,7 @@ impl FdTable {
             self.0[fd_idx] = Some(fd);
             return Ok(fd_idx);
         }
-        if self.0.len() == MAX_FDS {
+        if self.0.len() >= MAX_FDS {
             // NOTE: this is only to prevent clogging memory with fds
             return Err(Errno::EMFILE);
         }
@@ -180,7 +180,7 @@ impl FdTable {
 
         *fd = None;
         // pop all Nones from end
-        while Some(self.0.last()).is_none() {
+        while self.0.last().is_some_and(Option::is_none) {
             self.0.pop();
         }
         return Ok(());
@@ -199,7 +199,7 @@ impl FdTable {
             return Ok(newfd_idx.unwrap());
         }
 
-        if flags != Some(0) {
+        if flags.unwrap_or(0) != 0 {
             // NOTE: flags are currently unsupported
             return Err(Errno::EINVAL);
         }
