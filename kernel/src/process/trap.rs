@@ -226,6 +226,14 @@ pub extern "C" fn usertrap() -> usize {
                 syscall(&mut (*crate::CPU.current));
             }
             0x80000005 => timer(Some(proc)),
+            0 | 1 | 2 | 4 | 5 | 6 | 7 | 12 | 13 | 15 => {
+                let signal = match scause {
+                    12 | 13 | 15 => 11, // SIGSEGV: page fault
+                    2 => 4,             // SIGILL: illegal instruction
+                    _ => 7,             // SIGBUS: misalignment/access fault
+                };
+                proc.fault_exit(signal, scause, stval, sepc);
+            }
             _ => panic!(
                 "user> cause 0x{:x}, val: 0x{:x} sepc: 0x{:x}",
                 scause, stval, sepc

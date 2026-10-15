@@ -238,6 +238,7 @@ pub fn sys_waitid(proc: &mut Process) {
     const WEXITED: usize = 4; // Wait for children that have terminated.
     const SIGCHLD: i32 = 17;
     const CLD_EXITED: i32 = 1;
+    const CLD_KILLED: i32 = 2;
 
     let idtype = proc.trapframe.a0;
     let id = proc.trapframe.a1;
@@ -287,14 +288,14 @@ pub fn sys_waitid(proc: &mut Process) {
     }
 
     match proc.kwait(options & WNOHANG != 0) {
-        Ok(Some((pid, status))) => {
+        Ok(Some((pid, status, signal))) => {
             let info = Siginfo {
                 si_signo: SIGCHLD,
                 si_errno: 0,
-                si_code: CLD_EXITED,
+                si_code: if signal.is_some() { CLD_KILLED } else { CLD_EXITED },
                 si_pid: pid as i32,
                 si_uid: 0,
-                si_status: status as i32,
+                si_status: signal.unwrap_or(status) as i32,
                 _reserved: [0; 26],
             };
             proc.trapframe.a0 = match copy_out(&mut proc.pagetable, infop_addr, info) {

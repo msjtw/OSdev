@@ -157,6 +157,7 @@ pub struct Process {
     pub pagetable: virtmemory::Uvm, // user virt pagetable
     pub context: Context,
     pub xstatus: u32,
+    pub term_signal: Option<u32>,
     pub sleep_channel: Option<usize>,
     pub wake_at: Option<u64>, // wakeup time for sleeping processes
     pub trapframe: Box<Trapframe, &'static FrameAllocator>,
@@ -187,6 +188,7 @@ impl Process {
             pagetable: virtmemory::Uvm::new()?,
             context: Context::default(),
             xstatus: 0,
+            term_signal: None,
             sleep_channel: None,
             wake_at: None,
             pending_signals: 0,
@@ -209,6 +211,7 @@ impl Process {
         self.pagetable = virtmemory::Uvm::new()?;
         self.context = Context::default();
         self.xstatus = 0;
+        self.term_signal = None;
         self.sleep_channel = None;
         self.wake_at = None;
         self.pending_signals = 0;
@@ -435,6 +438,15 @@ impl Process {
         Ok(())
     }
 
+    pub fn fault_exit(&mut self, signal: u32, cause: usize, addr: usize, pc: usize) -> ! {
+        log::error!(
+            "user fault: pid={:?} cause={:#x} addr={:#x} pc={:#x} signal={}",
+            self.pid, cause, addr, pc, signal
+        );
+        self.term_signal = Some(signal);
+        self.kexit(0);
+    }
+
     pub fn kexit(&mut self, xstatus: u32) -> ! {
         if self.pid == Some(0) {
             panic!("init exit");
@@ -461,12 +473,13 @@ impl Process {
         panic!("cordyceps")
     }
 
-    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32)>, ()> {
+    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32, Option<u32>)>, ()> {
         loop {
             let parent_pid = self.pid;
             let mut has_kids = false;
             let mut zombie_pid = None;
             let mut zombie_xstatus = 0;
+            let mut zombie_signal = None;
             let mut parent_locked_for_sleep = false;
 
             {
@@ -481,6 +494,7 @@ impl Process {
                         has_kids = true;
                         if proc.state == ProcState::Zombie {
                             zombie_xstatus = proc.xstatus;
+                            zombie_signal = proc.term_signal;
                             zombie_pid = proc.pid;
                             proc.free().unwrap();
                             unsafe { proc.lock.unlock_manual() };
@@ -503,7 +517,7 @@ impl Process {
             }
 
             if let Some(pid) = zombie_pid {
-                return Ok(Some((pid, zombie_xstatus)));
+                return Ok(Some((pid, zombie_xstatus, zombie_signal)));
             }
 
             if !has_kids {
