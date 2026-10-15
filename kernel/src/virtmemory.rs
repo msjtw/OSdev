@@ -1,6 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
+    ops::Add,
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 
@@ -738,12 +739,24 @@ enum WalkType {
     Walk,
 }
 
-// return physical address for virual
-fn walkaddr(pagetree: &mut PageTable, virt_a: usize) -> Option<usize> {
+#[derive(Clone, Copy)]
+enum UserAccess {
+    Read,
+    Write,
+}
+
+// Translate user memory only. ELF loading uses Uvm::load separately so it can
+// populate executable/read-only pages without granting users write access.
+fn walkaddr(pagetree: &mut PageTable, virt_a: usize, access: UserAccess) -> Option<usize> {
     let pte = unsafe { pagetree.walk(virt_a, WalkType::Walk).ok_or(()).ok()?.read() };
     let pte = Pte::from(pte);
-    if !pte.v || !(pte.r || pte.w || pte.x) {
+    if !pte.v || !pte.u || !(pte.r || pte.x) || (pte.w && !pte.r) {
         return None;
+    }
+    match access {
+        UserAccess::Read if !pte.r => return None,
+        UserAccess::Write if !pte.w => return None,
+        _ => {}
     }
     let pa = pte.pa + (virt_a % PAGESIZE as usize);
     Some(pa)
@@ -751,90 +764,107 @@ fn walkaddr(pagetree: &mut PageTable, virt_a: usize) -> Option<usize> {
 
 // copy from given address space INTO current
 pub fn copy_in<T: Clone>(uv: &mut Uvm, addr: usize) -> Result<T, ()> {
-    let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
-    unsafe {
-        let val = (user_addr as *const T).read();
-        Ok(val)
-    }
+    let size = size_of::<T>();
+    let bytes = copy_in_bytes(uv, addr, size)?;
+    let value = unsafe { bytes.as_ptr().cast::<T>().read_unaligned() };
+    Ok(value)
 }
 
-// Copy continuous bytes
-pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, len: usize) -> Result<Vec<T>, ()> {
+pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, count: usize) -> Result<Vec<T>, ()> {
+    let size = size_of::<T>();
+    let bytes = copy_in_bytes(uv, addr, count.checked_mul(size).ok_or(())?)?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| ())?;
+    for i in 0..count {
+        let value = unsafe { bytes.as_ptr().add(i * size).cast::<T>().read_unaligned() };
+        values.push(value);
+    }
+    Ok(values)
+}
+
+pub fn copy_in_str(uv: &mut Uvm, mut addr: usize) -> Result<String, ()> {
     let mut bytes = Vec::new();
-    let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
-
-    for i in 0..len {
-        let byte = unsafe { (user_addr as *const T).add(i).read() };
-        bytes.push(byte);
-    }
-
-    Ok(bytes)
-}
-
-/// Copy bytes from a user address space, correctly handling page boundaries.
-pub fn copy_in_bytes(uv: &mut Uvm, mut addr: usize, mut len: usize) -> Result<Vec<u8>, ()> {
-    let mut bytes = Vec::with_capacity(len);
-    while len != 0 {
-        let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
-        let page_offset = addr & (PAGESIZE - 1);
-        let n = len.min(PAGESIZE - page_offset);
-        let old_len = bytes.len();
-        bytes.resize(old_len + n, 0);
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                user_addr as *const u8,
-                bytes[old_len..].as_mut_ptr(),
-                n,
-            );
-        }
-        addr += n;
-        len -= n;
-    }
-    Ok(bytes)
-}
-
-pub fn copy_in_str(uv: &mut Uvm, addr: usize) -> Result<String, ()> {
-    let mut bytes = Vec::new();
-    let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
-
-    let mut i = 0;
     loop {
-        let byte = unsafe { (user_addr as *const u8).add(i).read() };
-        if byte == 0 {
-            break;
+        let mut phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Read).ok_or(())?;
+        loop {
+            let byte = unsafe { (phys as *const u8).read() };
+            if byte == 0 {
+                return String::from_utf8(bytes).map_err(|_| ());
+            }
+            bytes.push(byte);
+            addr = addr.checked_add(1).ok_or(())?;
+            phys += 1;
+            if addr % PAGESIZE == 0 {
+                break;
+            }
         }
-        bytes.push(byte);
-        i += 1;
     }
-
-    String::from_utf8(bytes).map_err(|_| ())
 }
 
 // copy from current OUT to user
 pub fn copy_out<T>(uv: &mut Uvm, addr: usize, data: T) -> Result<(), ()> {
-    let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
-    unsafe {
-        (user_addr as *mut T).write(data);
-    }
-    Ok(())
+    unsafe { copy_out_bytes(uv, addr, (&data as *const T).cast(), size_of::<T>()) }
 }
 
-// Copy continuous bytes
-pub fn copy_out_cont(uv: &mut Uvm, mut addr: usize, mut data: &[u8]) -> Result<(), ()> {
-    while !data.is_empty() {
-        let user_addr = walkaddr(&mut uv.pagetable, addr).ok_or(())?;
+pub fn copy_out_cont<T: Copy>(uv: &mut Uvm, addr: usize, data: &[T]) -> Result<(), ()> {
+    let len = data.len().checked_mul(size_of::<T>()).ok_or(())?;
+    unsafe { copy_out_bytes(uv, addr, data.as_ptr().cast(), len) }
+}
 
-        let page_offset = addr & (PAGESIZE - 1);
-        let bytes_in_page = PAGESIZE - page_offset;
-        let n = data.len().min(bytes_in_page);
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(data.as_ptr(), user_addr as *mut u8, n);
-        }
-
-        addr += n;
-        data = &data[n..];
+fn copy_in_bytes(uv: &mut Uvm, mut addr: usize, len: usize) -> Result<Vec<u8>, ()> {
+    let mut remaining = len;
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let end = addr.checked_add(remaining).ok_or(())?;
+    if end > TRAPFRAME {
+        return Err(());
     }
 
+    let mut bytes = Vec::<u8>::new();
+    // small optimisation, this reserves the space but doest set len
+    bytes.try_reserve_exact(len).map_err(|_| ())?;
+    let mut bytes_ptr = bytes.as_mut_ptr();
+    while remaining != 0 {
+        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Read).ok_or(())?;
+        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
+        unsafe {
+            // copy straight into bytes
+            copy_nonoverlapping(phys as *const u8, bytes_ptr, chunk);
+            bytes_ptr = bytes_ptr.add(chunk);
+        }
+        addr = addr.checked_add(chunk).ok_or(())?;
+        remaining -= chunk;
+    }
+    // everything successful so set it's length
+    unsafe { bytes.set_len(len) };
+    Ok(bytes)
+}
+
+unsafe fn copy_out_bytes(
+    uv: &mut Uvm,
+    mut addr: usize,
+    mut source: *const core::mem::MaybeUninit<u8>, // data that may be uninitialized
+    len: usize,
+) -> Result<(), ()> {
+    if len == 0 {
+        return Ok(());
+    }
+    let end = addr.checked_add(len).ok_or(())?;
+    if end > TRAPFRAME {
+        return Err(());
+    }
+
+    let mut remaining = len;
+    while remaining != 0 {
+        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Write).ok_or(())?;
+        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
+        unsafe {
+            copy_nonoverlapping(source, phys as *mut core::mem::MaybeUninit<u8>, chunk);
+            source = source.add(chunk);
+        }
+        addr = addr.checked_add(chunk).ok_or(())?;
+        remaining -= chunk;
+    }
     Ok(())
 }
