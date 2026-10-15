@@ -205,28 +205,32 @@ pub fn sys_clone(proc: &mut Process) {
 }
 
 pub fn sys_exec(proc: &mut Process) {
-    let path_addr = proc.trapframe.a0;
-    let mut argv_addr = proc.trapframe.a1;
+    let result = (|| {
+        let path = copy_in_str(&mut proc.pagetable, proc.trapframe.a0).map_err(|_| Errno::EFAULT)?;
+        let mut argv_addr = proc.trapframe.a1;
 
-    let path = copy_in_str(&mut proc.pagetable, path_addr).unwrap();
-
-    let mut argv = Vec::<String>::new();
-    loop {
-        let arg_addr = copy_in::<usize>(&mut proc.pagetable, argv_addr).unwrap();
-        if arg_addr == 0 {
-            break;
+        let mut argv = Vec::<String>::new();
+        if argv_addr != 0 {
+            loop {
+                let arg_addr = copy_in::<usize>(&mut proc.pagetable, argv_addr).map_err(|_| Errno::EFAULT)?;
+                if arg_addr == 0 {
+                    break;
+                }
+                if argv.len() == 64 {
+                    return Err(Errno::E2BIG);
+                }
+                let arg = copy_in_str(&mut proc.pagetable, arg_addr).map_err(|_| Errno::EFAULT)?;
+                argv.try_reserve(1).map_err(|_| Errno::ENOMEM)?;
+                argv.push(arg);
+                argv_addr = argv_addr.checked_add(size_of::<usize>()).ok_or(Errno::EFAULT)?;
+            }
         }
-
-        let arg_str = copy_in_str(&mut proc.pagetable, arg_addr).unwrap();
-        argv.push(arg_str);
-
-        argv_addr += size_of::<usize>();
-    }
-
-    let argv_str = argv.iter().map(|s| s.as_ref()).collect();
-    match proc.kexec(path, argv_str) {
+        let argv_str = argv.iter().map(|s| s.as_ref()).collect();
+        proc.kexec(path, argv_str)
+    })();
+    match result {
         Ok(_) => proc.trapframe.a0 = 0,
-        Err(_) => proc.trapframe.a0 = Errno::ENOENT.into(),
+        Err(error) => proc.trapframe.a0 = error.into(),
     };
 }
 

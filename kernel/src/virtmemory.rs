@@ -1,14 +1,13 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::asm,
-    ops::Add,
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 
 use alloc::{alloc::Allocator, string::String, vec::Vec};
 
 use crate::{
-    FRAME_ALLOCATOR, HEAP_ALLOCATOR, log,
+    FRAME_ALLOCATOR, HEAP_ALLOCATOR, 
     process::{
         Process,
         trap::{trampoline::_trampoline, trapframe::Trapframe},
@@ -585,6 +584,29 @@ impl Uvm {
             return Err(VmError::Invalid);
         }
         self.alloc(addr, size, perm).map_err(|()| VmError::NoMemory)
+    }
+
+    // ELF LOAD segments can share pages. Reuse them instead of overwriting
+    // mappings and losing their backing frames; combine segment permissions.
+    pub fn map_elf_segment(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), VmError> {
+        if perm == 0 {
+            return Err(VmError::Invalid);
+        }
+        let end = addr.checked_add(size).ok_or(VmError::Invalid)?;
+        for page in (addr..end).step_by(PAGESIZE) {
+            if let Some(entry) = self.pagetable.walk(page, WalkType::Walk) {
+                let bits = unsafe { entry.as_ptr().read() };
+                if Pte::from(bits).v {
+                    if !Pte::from(bits).u {
+                        return Err(VmError::Invalid);
+                    }
+                    unsafe { entry.as_ptr().write(bits | perm) };
+                    continue;
+                }
+            }
+            self.map(page, PAGESIZE, perm)?;
+        }
+        Ok(())
     }
 
     // Allocate an mapping in the mmap region and return its base.

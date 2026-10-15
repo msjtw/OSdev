@@ -300,26 +300,34 @@ impl Process {
         Ok(child_pid)
     }
 
-    pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), ()> {
-        let img = crate::fs::read_file(&path)?;
-        let entry = elf::get_elf_entry(&img)?;
+    pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), fd::Errno> {
+        use fd::Errno;
+        let arg_bytes = argv.iter().try_fold(0usize, |total, arg| {
+            total.checked_add(arg.len())?.checked_add(1)
+        }).ok_or(Errno::E2BIG)?;
+        if argv.len() > 64 || arg_bytes > 16 * 1024 {
+            return Err(Errno::E2BIG);
+        }
+        let img = crate::fs::read_file(&path).map_err(|_| Errno::ENOENT)?;
+        let entry = elf::get_elf_entry(&img).map_err(|_| Errno::ENOEXEC)?;
 
-        let mut pagetree = Uvm::new()?;
-        pagetree.init_proc(self)?;
+        let mut pagetree = Uvm::new().map_err(|_| Errno::ENOMEM)?;
+        pagetree.init_proc(self).map_err(|_| Errno::ENOMEM)?;
 
         let mut image_end = 0;
-        for segment in elf::get_elf_segments(&img)? {
+        for segment in elf::get_elf_segments(&img).map_err(|_| Errno::ENOEXEC)? {
+            if segment.p_type == 3 { // PT_INTERP: dynamic linking is unsupported.
+                return Err(Errno::ENOEXEC);
+            }
             if segment.p_type != elf::PT_LOAD {
                 continue;
             }
 
             let segment_addr = segment.p_vaddr as usize;
-            let file_size = segment.p_filesz as usize;
             let memory_size = segment.p_memsz as usize;
-            if file_size > memory_size {
-                return Err(());
+            if memory_size == 0 {
+                continue;
             }
-
             // ELF PT_LOAD doesnt have to be page aligned
             // map aligned pages and load
             let page_start = segment_addr & !(PAGESIZE - 1);
@@ -328,14 +336,16 @@ impl Process {
                 .checked_add(memory_size)
                 .and_then(|size| size.checked_add(PAGESIZE - 1))
                 .map(|size| size & !(PAGESIZE - 1))
-                .ok_or(())?;
+                .ok_or(Errno::ENOEXEC)?;
+            let map_end = page_start.checked_add(map_size).ok_or(Errno::ENOEXEC)?;
+            let data = elf::segment_bytes(&img, &segment).ok_or(Errno::ENOEXEC)?;
 
             pagetree
-                .map(page_start, map_size, elf_flags_to_pte(segment.p_flags))
-                .map_err(|_| ())?;
-            image_end = image_end.max(page_start.checked_add(map_size).ok_or(())?);
+                .map_elf_segment(page_start, map_size, elf_flags_to_pte(segment.p_flags))
+                .map_err(|_| Errno::ENOMEM)?;
+            image_end = image_end.max(map_end);
 
-            pagetree.load(segment_addr, elf::segment_bytes(&img, &segment).ok_or(())?)?;
+            pagetree.load(segment_addr, data).map_err(|_| Errno::ENOEXEC)?;
         }
 
         let heap_base = image_end;
@@ -356,7 +366,7 @@ impl Process {
         let stack_base = stack_top - USER_STACK_PAGES * PAGESIZE;
         pagetree
             .map(stack_base, USER_STACK_PAGES * PAGESIZE, PTE_W | PTE_R)
-            .map_err(|_| ())?;
+            .map_err(|_| Errno::ENOMEM)?;
 
         let mut sp = stack_top;
 
@@ -367,18 +377,18 @@ impl Process {
             let bytes = arg.as_bytes();
 
             // null terminate
-            let size = bytes.len() + 1;
+            let size = bytes.len().checked_add(1).ok_or(Errno::E2BIG)?;
 
             if sp < stack_base + size {
-                return Err(());
+                return Err(Errno::E2BIG);
             }
 
             sp -= size;
 
-            copy_out_cont(&mut pagetree, sp, bytes)?;
+            copy_out_cont(&mut pagetree, sp, bytes).map_err(|_| Errno::E2BIG)?;
 
             // write terminating '\0'.
-            copy_out(&mut pagetree, sp + bytes.len(), 0u8)?;
+            copy_out(&mut pagetree, sp + bytes.len(), 0u8).map_err(|_| Errno::E2BIG)?;
 
             arg_ptrs.push(sp);
         }
@@ -394,34 +404,35 @@ impl Process {
 
         // check for space
         // argc, argv[], argv NULL, envp NULL, AT_PAGESZ, and AT_NULL.
-        let left_to_write = (argc + 7) * word_size;
-        if sp - left_to_write < stack_base {
-            return Err(());
+        let left_to_write = argc.checked_add(7)
+            .and_then(|words| words.checked_mul(word_size)).ok_or(Errno::E2BIG)?;
+        if sp.checked_sub(left_to_write).ok_or(Errno::E2BIG)? < stack_base {
+            return Err(Errno::E2BIG);
         }
 
         // auxv: AT_NULL, 0
         sp -= word_size;
-        copy_out(&mut pagetree, sp, 0usize)?;
+        copy_out(&mut pagetree, sp, 0usize).map_err(|_| Errno::E2BIG)?;
         sp -= word_size;
-        copy_out(&mut pagetree, sp, 0usize)?;
+        copy_out(&mut pagetree, sp, 0usize).map_err(|_| Errno::E2BIG)?;
         // auxv: AT_PAGESZ, page size
         sp -= word_size;
-        copy_out(&mut pagetree, sp, PAGESIZE)?;
+        copy_out(&mut pagetree, sp, PAGESIZE).map_err(|_| Errno::E2BIG)?;
         sp -= word_size;
-        copy_out(&mut pagetree, sp, 6usize)?;
+        copy_out(&mut pagetree, sp, 6usize).map_err(|_| Errno::E2BIG)?;
         // empty envp and argv terminator
         sp -= word_size;
-        copy_out(&mut pagetree, sp, 0usize)?;
+        copy_out(&mut pagetree, sp, 0usize).map_err(|_| Errno::E2BIG)?;
         sp -= word_size;
-        copy_out(&mut pagetree, sp, 0usize)?;
+        copy_out(&mut pagetree, sp, 0usize).map_err(|_| Errno::E2BIG)?;
         // argv pointers in reverse
         for &a_ptr in arg_ptrs.iter().rev() {
             sp -= word_size;
-            copy_out(&mut pagetree, sp, a_ptr)?;
+            copy_out(&mut pagetree, sp, a_ptr).map_err(|_| Errno::E2BIG)?;
         }
         // and argc
         sp -= word_size;
-        copy_out(&mut pagetree, sp, argc)?;
+        copy_out(&mut pagetree, sp, argc).map_err(|_| Errno::E2BIG)?;
 
         self.pagetable = pagetree;
         self.pagetable.heap_base = heap_base;

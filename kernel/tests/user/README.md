@@ -26,3 +26,25 @@ reproduced kernel panics for trap causes 13 (load page fault), 15 (store page
 fault), and 2 (illegal instruction). Logs and failed images are saved under
 `build/test-artifacts/`. They are not xfailed: failures must become real passes
 when fault isolation and signal-aware wait reporting are implemented.
+
+## Exec failure regressions (M-007)
+
+```sh
+uv run pytest tests/test_exec_errors.py -v
+```
+
+Uses the same compiler/linker and disposable-image setup as M-006.
+`exec_errors.S` attempts each failure 20 times in the same process, checking
+the exact errno. It then prints `M007_EXEC_TEST_OK` and successfully execs
+`/bin/true`; returning from that final exec is a test failure. Pytest also
+checks that the shell can run another command afterward.
+
+Cases cover invalid path/argv/argument pointers (`EFAULT`), more than 64
+arguments or more than 16 KiB of argument data (`E2BIG`), and malformed
+executables (`ENOEXEC`). ELF cases cover a truncated header and an out-of-file
+program-header table. No environment variables or in-kernel test code are used.
+
+Path-length, inconsistent segment-size, reserved-address, and invalid-entry tests
+are deliberately excluded:
+the project assumes conventional toolchain-generated ELF images rather than
+comprehensive validation of malformed executables.

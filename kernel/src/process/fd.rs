@@ -6,6 +6,9 @@ use crate::process::Process;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
+    E2BIG,
+    ENOEXEC,
+    ENAMETOOLONG,
     EPERM,
     EINTR,
     ESRCH,
@@ -32,24 +35,27 @@ impl Into<usize> for Errno {
     fn into(self) -> usize {
         let code = match self {
             Self::EPERM => 1,
+            Self::ENOENT => 2,
             Self::EINTR => 4,
+            Self::EIO => 5,
             Self::ESRCH => 3,
             Self::ENXIO => 6,
-            Self::ENOENT => 2,
-            Self::ENOTDIR => 20,
-            Self::EISDIR => 21,
+            Self::E2BIG => 7,
+            Self::ENOEXEC => 8,
             Self::EBADF => 9, // Bad file descriptor.
             Self::ECHILD => 10,
-            Self::ENOMEM => 12,
             Self::EAGAIN => 11,
+            Self::ENOMEM => 12,
             Self::EFAULT => 14, // Bad address.
+            Self::ENOTDIR => 20,
+            Self::EISDIR => 21,
             Self::EINVAL => 22, // Invalid argument.
             Self::EMFILE => 24, // Too many open files.
             Self::ENOTTY => 25, // Inappropriate ioctl for device.
+            Self::EROFS => 30,
             Self::EPIPE => 32,  // Broken pipe.
             Self::ERANGE => 34,
-            Self::EROFS => 30,
-            Self::EIO => 5,
+            Self::ENAMETOOLONG => 36,
             Self::EOVERFLOW => 75,
         };
         (-code as isize) as usize

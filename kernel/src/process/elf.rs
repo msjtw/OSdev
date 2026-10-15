@@ -75,16 +75,32 @@ pub const PF_X: u32 = 1;
 pub const PF_W: u32 = 2;
 pub const PF_R: u32 = 4;
 
-pub fn get_elf_segments(img: &[u8]) -> Result<Vec<Elf32_Phdr>, ()> {
+fn read_header(img: &[u8]) -> Result<ElfEhdr, ()> {
+    if img.len() < size_of::<ElfEhdr>() {
+        return Err(());
+    }
     let ehdr = unsafe { core::ptr::read_unaligned(img.as_ptr() as *const ElfEhdr) };
-    if ehdr.e_ident[0..4] != [0x7f, 'E' as u8, 'L' as u8, 'F' as u8] {
+    if ehdr.e_ident[0..4] != [0x7f, b'E', b'L', b'F']
+        || ehdr.e_ident[4] != 1 // ELF32
+        || ehdr.e_ident[5] != 1 // little endian
+        || ehdr.e_type != 2 // static executable
+        || ehdr.e_machine != 243 // RISC-V
+        || ehdr.e_version != 1
+        || ehdr.e_phentsize as usize != size_of::<Elf32_Phdr>()
+    {
         return Err(());
     }
-    if ehdr.e_ident[4] != 1 {
-        // not 32 bit elf
+    let end = (ehdr.e_phoff as usize)
+        .checked_add((ehdr.e_phnum as usize).checked_mul(size_of::<Elf32_Phdr>()).ok_or(())?)
+        .ok_or(())?;
+    if end > img.len() {
         return Err(());
     }
-    // println!("{:x?}", ehdr);
+    Ok(ehdr)
+}
+
+pub fn get_elf_segments(img: &[u8]) -> Result<Vec<Elf32_Phdr>, ()> {
+    let ehdr = read_header(img)?;
 
     Ok((0..ehdr.e_phnum)
         .map(|i| {
@@ -96,10 +112,7 @@ pub fn get_elf_segments(img: &[u8]) -> Result<Vec<Elf32_Phdr>, ()> {
 }
 
 pub fn get_elf_entry(img: &[u8]) -> Result<usize, ()> {
-    let ehdr = unsafe { core::ptr::read_unaligned(img.as_ptr() as *const ElfEhdr) };
-    if ehdr.e_ident[0..4] != [0x7f, 'E' as u8, 'L' as u8, 'F' as u8] || ehdr.e_ident[4] != 1 {
-        return Err(());
-    }
+    let ehdr = read_header(img)?;
     Ok(ehdr.e_entry as usize)
 }
 
