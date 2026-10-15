@@ -3,6 +3,9 @@ name = "rust-baremetal"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+fs-write-probe = []
+
 [dependencies]
 spin = "0.9"
 buddy_system_allocator = "0.12.0"

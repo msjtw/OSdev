@@ -213,6 +213,7 @@ impl<T: Transport, const N: usize> VirtioBlk<T, N> {
 
         if required_feats != required_feats & device_feats {
             log::error!("virtio-blk: device missing required features");
+            return Err(());
         }
 
         let common_feats = supported_feats & device_feats;
@@ -400,7 +401,6 @@ impl<T: Transport, const N: usize> BlockDevice for VirtioBlk<T, N> {
             .desc(1)
             .addr_raw(data_addr)
             .len(self.block_size)
-            .flag_write()
             .next(2);
 
         self.queue.desc(2).addr_raw(status_addr).len(1).flag_write();

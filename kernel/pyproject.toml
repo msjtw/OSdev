@@ -1,0 +1,15 @@
+[project]
+name = "kernel-qemu-tests"
+version = "0.1.0"
+description = "Host-driven QEMU tests for the Rust bare-metal kernel"
+requires-python = ">=3.11"
+dependencies = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "qemu: boots the kernel in QEMU and communicates through its serial console",
+]
+addopts = "-ra"

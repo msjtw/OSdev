@@ -162,6 +162,32 @@ struct VirtioExt4Device {
 }
 
 impl VirtioExt4Device {
+    #[cfg(feature = "fs-write-probe")]
+    fn write_exact(&self, offset: usize, data: &[u8]) -> Result<(), ()> {
+        let mut disk = self.disk.lock();
+        let size = disk.block_size();
+        let end = offset.checked_add(data.len()).ok_or(())?;
+        let capacity = disk.block_count().checked_mul(size as u64).ok_or(())?;
+        if end as u64 > capacity {
+            return Err(());
+        }
+        let mut block = vec![0; size];
+        let mut copied = 0;
+        while copied < data.len() {
+            let position = offset + copied;
+            let index = (position / size) as u64;
+            let within = position % size;
+            let count = min(size - within, data.len() - copied);
+            if within != 0 || count != size {
+                disk.read_block(index, &mut block)?;
+            }
+            block[within..within + count].copy_from_slice(&data[copied..copied + count]);
+            disk.write_block(index, &block)?;
+            copied += count;
+        }
+        Ok(())
+    }
+
     fn read_exact(&self, offset: usize) -> Result<Vec<u8>, ()> {
         let mut disk = self.disk.lock();
         let disk_block_size = disk.block_size();
@@ -190,23 +216,71 @@ impl Ext4BlockDevice for VirtioExt4Device {
     }
 
     fn write_offset(&self, _offset: usize, _data: &[u8]) {
-        // The initial root filesystem is deliberately read-only.  ext4_rs's
-        // device trait cannot report I/O failures, so never risk a silent
-        // partial write to the boot volume.
-        panic!("attempted write to read-only ext4 root filesystem");
+        #[cfg(feature = "fs-write-probe")]
+        self.write_exact(_offset, _data)
+            .expect("ext4 probe block write failed");
+
+        #[cfg(not(feature = "fs-write-probe"))]
+        {
+            // The initial root filesystem is deliberately read-only.  ext4_rs's
+            // device trait cannot report I/O failures, so never risk a silent
+            // partial write to the boot volume.
+            panic!("attempted write to read-only ext4 root filesystem");
+        }
     }
 }
 
 /// Discover the first VirtIO-MMIO disk and mount it as the read-only root.
 pub fn mount_root() -> Result<(), ()> {
     let disk = block::discover().ok_or(())?;
+    #[cfg(feature = "fs-write-probe")]
+    let probe_disk = Arc::clone(&disk);
     let device: Arc<dyn Ext4BlockDevice> = Arc::new(VirtioExt4Device { disk });
     let fs = Arc::new(Ext4::open(device));
 
     // Force a root-directory read now, while boot diagnostics are available.
     let entries = fs.dir_get_entries(ROOT_INODE);
     log::info!("ext4: mounted root with {} entries", entries.len());
+    #[cfg(feature = "fs-write-probe")]
+    run_write_probe(&fs, &probe_disk)?;
     ROOT_FS.call_once(|| fs);
+    Ok(())
+}
+
+/// Deliberately test-only: never enable this feature against a valuable image.
+#[cfg(feature = "fs-write-probe")]
+fn run_write_probe(fs: &Ext4, disk: &SharedBlockDevice) -> Result<(), ()> {
+    // Require an explicit image sentinel before issuing any mutation.
+    let inode = lookup_inode(fs, "/m004-probe.txt").map_err(|_| ())?;
+    if fs.get_inode_ref(inode).inode.size() != (3 * BLOCK_SIZE) as u64 {
+        return Err(());
+    }
+    let payload = b"M004-cross-block-write";
+    // The pinned library underflows when total_blocks_needed is less than
+    // the remaining file blocks. Exercise the last two blocks for this spike.
+    let offset = 2 * BLOCK_SIZE - 8;
+    if fs.write_at(inode, offset, payload).map_err(|error| {
+        log::error!("M004 overwrite failed: {:?}", error);
+    })? != payload.len()
+    {
+        return Err(());
+    }
+    disk.lock().flush()?;
+    log::info!("M004_OVERWRITE_OK");
+    let child = fs
+        .create(ROOT_INODE, "m004-created.txt", 0o100644)
+        .map_err(|error| {
+            log::error!("M004 create failed: {:?}", error);
+        })?;
+    let data = vec![b'Z'; 2 * BLOCK_SIZE + 37];
+    if fs.write_at(child.inode_num, 0, &data).map_err(|error| {
+        log::error!("M004 allocation/write failed: {:?}", error);
+    })? != data.len()
+    {
+        return Err(());
+    }
+    disk.lock().flush()?;
+    log::info!("M004_WRITE_PROBE_OK");
     Ok(())
 }
 

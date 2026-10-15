@@ -7,3 +7,13 @@ buddy_system_allocator
 linked-list-allocator
 doc.md
 REVIEW.md
+task.md
+book-riscv-rev5.pdf
+.venv/
+build/test-artifacts/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+coverage.xml
