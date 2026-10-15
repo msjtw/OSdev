@@ -452,7 +452,9 @@ impl Process {
             panic!("init exit");
         }
 
-        // TODO: close all open files
+        // Close before taking exit locks
+        // pipe endpoint drops wake peers
+        self.fds = fd::FdTable::new();
         {
             let lock = IntMutex::new(());
             let guard = lock.lock();
