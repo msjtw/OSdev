@@ -2,6 +2,7 @@ use crate::{
     log, process::{
         Process,
         fd::{Errno, FileDescriptor, FD_CLOEXEC, O_CLOEXEC, POLLIN, POLLNVAL, POLLOUT},
+        pipe::new_pipe,
     }, vfs, virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 use alloc::sync::Arc;
@@ -73,67 +74,34 @@ pub fn sys_ppoll(proc: &mut Process) {
     proc.trapframe.a0 = ready;
 }
 
-// FIX: this soudl be flags from open
-
 /// Linux RISC-V pipe2. Only flags == 0 is supported for now.
-// pub fn sys_pipe2(proc: &mut Process) {
-//     let pipefd_addr = proc.trapframe.a0;
-//     let flags = proc.trapframe.a1;
-//
-//     if flags != 0 {
-//         proc.trapframe.a0 = Errno::EINVAL.into();
-//         return;
-//     }
-//
-//     let mut fds = proc.fds;
-//
-//     let (read_description, write_description) = new_pipe();
-//     let (read_fd, write_fd) = {
-//         let read_fd = match fds.insert(read_description.clone()) {
-//             Ok(fd) => fd,
-//             Err(error) => {
-//                 proc.trapframe.a0 = error.into();
-//                 return;
-//             }
-//         };
-//         let write_fd = match fds.insert(write_description.clone()) {
-//             Ok(fd) => fd,
-//             Err(error) => {
-//                 match fds.remove(read_fd) {
-//                     Ok(_) => {}
-//                     Err(error) => {
-//                         proc.trapframe.a0 = error.into();
-//                         return;
-//                     }
-//                 }
-//                 proc.trapframe.a0 = error.into();
-//                 return;
-//             }
-//         };
-//         (read_fd, write_fd)
-//     };
-//
-//     // FIX: What this even does
-//     let mut result = [0u8; 8];
-//     result[0..4].copy_from_slice(&(read_fd as u32).to_ne_bytes());
-//     result[4..8].copy_from_slice(&(write_fd as u32).to_ne_bytes());
-//     if copy_out_cont(&mut proc.pagetable, pipefd_addr, &result).is_err() {
-//         if let Some(Some(entry)) = fds.get(read_fd) {
-//             if Arc::ptr_eq(entry, &read_description) {
-//                 fds[read_fd] = None;
-//             }
-//         }
-//         if let Some(Some(entry)) = fds.get(write_fd) {
-//             if Arc::ptr_eq(entry, &write_description) {
-//                 fds[write_fd] = None;
-//             }
-//         }
-//         proc.trapframe.a0 = Errno::EFAULT.into();
-//         return;
-//     }
-//
-//     proc.trapframe.a0 = 0;
-// }
+pub fn sys_pipe2(proc: &mut Process) {
+    let pipefd_addr = proc.trapframe.a0;
+    let flags = proc.trapframe.a1;
+    if flags != 0 {
+        proc.trapframe.a0 = Errno::EINVAL.into();
+        return;
+    }
+
+    let (read_end, write_end) = new_pipe();
+    let (read_fd, write_fd) = match proc.fds.push_pair(read_end, write_end) {
+        Ok(fds) => fds,
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
+        }
+    };
+    let mut result = [0u8; 8];
+    result[..4].copy_from_slice(&(read_fd as u32).to_ne_bytes());
+    result[4..].copy_from_slice(&(write_fd as u32).to_ne_bytes());
+    if copy_out_cont(&mut proc.pagetable, pipefd_addr, &result).is_err() {
+        let _ = proc.fds.remove(read_fd);
+        let _ = proc.fds.remove(write_fd);
+        proc.trapframe.a0 = Errno::EFAULT.into();
+        return;
+    }
+    proc.trapframe.a0 = 0;
+}
 
 pub fn sys_dup(proc: &mut Process) {
     let fd_idx = proc.trapframe.a0;

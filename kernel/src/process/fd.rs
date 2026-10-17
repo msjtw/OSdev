@@ -192,6 +192,26 @@ impl FdTable {
         Ok(fd_idx)
     }
 
+    // push eiter both pipe ends or none
+    pub fn push_pair(
+        &mut self,
+        first: Arc<FileDescriptor>,
+        second: Arc<FileDescriptor>,
+    ) -> Result<(usize, usize), Errno> {
+        let available = self.0.iter().filter(|entry| entry.is_none()).count() + MAX_FDS - self.0.len();
+        if available < 2 {
+            return Err(Errno::EMFILE);
+        }
+        let first_fd = self.push(first)?;
+        match self.push(second) {
+            Ok(second_fd) => Ok((first_fd, second_fd)),
+            Err(error) => {
+                let _ = self.remove(first_fd);
+                Err(error)
+            }
+        }
+    }
+
     pub fn insert(&mut self, fd: Arc<FileDescriptor>, pos: usize) -> Result<usize, Errno> {
         if pos >= MAX_FDS {
             return Err(Errno::EMFILE);

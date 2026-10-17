@@ -9,6 +9,7 @@ use crate::{
     kernel::syscall::{
         sys_file::{
             sys_close, sys_dup, sys_dup3, sys_fcntl, sys_getdents64, sys_ioctl, sys_openat,
+            sys_pipe2,
             sys_lseek, sys_ppoll, sys_read, sys_statx, sys_write, sys_writev,
         },
         sys_memory::{sys_brk, sys_mmap, sys_munmap},
@@ -32,7 +33,7 @@ pub const SYS_CLOSE: usize = 57;
 pub const SYS_OPENAT: usize = 56;
 pub const SYS_GETDENTS64: usize = 61;
 pub const SYS_LSEEK: usize = 62;
-// pub const SYS_PIPE2: usize = 59;
+pub const SYS_PIPE2: usize = 59;
 pub const SYS_READ: usize = 63;
 pub const SYS_WRITE: usize = 64;
 pub const SYS_WRITEV: usize = 66;
@@ -92,7 +93,7 @@ pub fn syscall(proc: &mut Process) {
         SYS_OPENAT => sys_openat(proc),
         SYS_GETDENTS64 => sys_getdents64(proc),
         SYS_LSEEK => sys_lseek(proc),
-        // SYS_PIPE2 => sys_pipe2(proc),
+        SYS_PIPE2 => sys_pipe2(proc),
         SYS_READ => sys_read(proc),
         SYS_WRITE => sys_write(proc),
         SYS_WRITEV => sys_writev(proc),
