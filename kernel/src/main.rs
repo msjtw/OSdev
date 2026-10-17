@@ -7,6 +7,7 @@ pub mod allocator;
 mod csr;
 mod drivers;
 mod fs;
+pub mod vfs;
 mod kernel;
 pub mod lock;
 mod log;

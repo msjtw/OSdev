@@ -308,7 +308,7 @@ impl Process {
         if argv.len() > 64 || arg_bytes > 16 * 1024 {
             return Err(Errno::E2BIG);
         }
-        let img = crate::fs::read_file(&path).map_err(|_| Errno::ENOENT)?;
+        let img = crate::vfs::read_all(&path)?;
         let entry = elf::get_elf_entry(&img).map_err(|_| Errno::ENOEXEC)?;
 
         let mut pagetree = Uvm::new().map_err(|_| Errno::ENOMEM)?;

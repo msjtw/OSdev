@@ -1,6 +1,4 @@
-/// Fixed-capacity byte FIFO with no heap allocation.
-///
-/// `CAPACITY` must be nonzero.
+// Fixed-capacity byte FIFO with no heap allocation.
 #[derive(Debug)]
 pub struct RingBuffer<const CAPACITY: usize> {
     bytes: [u8; CAPACITY],

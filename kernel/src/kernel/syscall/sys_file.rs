@@ -1,10 +1,8 @@
 use crate::{
-    fs, log,
-    process::{
+    log, process::{
         Process,
         fd::{Errno, FileDescriptor, POLLIN, POLLNVAL, POLLOUT},
-    },
-    virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
+    }, vfs, virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 use alloc::sync::Arc;
 
@@ -248,7 +246,7 @@ pub fn sys_openat(proc: &mut Process) {
                 return;
             }
 
-            proc.trapframe.a0 = match fs::open_file(&path) {
+            proc.trapframe.a0 = match vfs::open_file(&path) {
                 Ok(target) => match proc.fds.push(Arc::new(FileDescriptor {
                     target,
                     readable: true,
@@ -338,7 +336,7 @@ pub fn sys_statx(proc: &mut Process) {
         }
     };
 
-    let metadata = match fs::metadata(&path) {
+    let metadata = match vfs::metadata(&path) {
         Ok(metadata) => metadata,
         Err(error) => {
             proc.trapframe.a0 = error.into();
@@ -351,7 +349,7 @@ pub fn sys_statx(proc: &mut Process) {
     };
     let stat = Statx {
         stx_mask: STATX_BASIC_STATS | STATX_BTIME,
-        stx_blksize: ext4_rs::BLOCK_SIZE as u32,
+        stx_blksize: vfs::BLOCK_SIZE as u32,
         stx_nlink: metadata.links,
         stx_uid: metadata.uid,
         stx_gid: metadata.gid,
