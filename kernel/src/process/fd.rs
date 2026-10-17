@@ -17,6 +17,7 @@ pub enum Errno {
     EFAULT,
     EINVAL,
     ENOTTY,
+    ESPIPE,
     EPIPE,
     EMFILE,
     EAGAIN,
@@ -52,6 +53,7 @@ impl Into<usize> for Errno {
             Self::EINVAL => 22, // Invalid argument.
             Self::EMFILE => 24, // Too many open files.
             Self::ENOTTY => 25, // Inappropriate ioctl for device.
+            Self::ESPIPE => 29,
             Self::EROFS => 30,
             Self::EPIPE => 32,  // Broken pipe.
             Self::ERANGE => 34,
@@ -71,6 +73,10 @@ pub trait FileOps: Send + Sync {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn write(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
     fn ioctl(&self, proc: &mut Process, op: usize, arg: usize) -> Result<usize, Errno>;
+
+    fn seek(&self, _offset: isize, _whence: usize) -> Result<usize, Errno> {
+        Err(Errno::ESPIPE)
+    }
 
     // Return Linux dirent64 records for a directory descriptor.
     fn getdents64(&self, _proc: &mut Process, _addr: usize, _len: usize) -> Result<usize, Errno> {
@@ -98,9 +104,17 @@ impl Debug for FileDescriptor {
 }
 
 pub const MAX_FDS: usize = 64;
+pub const FD_CLOEXEC: usize = 1;
+pub const O_CLOEXEC: usize = 0x80000;
 
 #[derive(Clone, Debug)]
-pub struct FdTable(Vec<Option<Arc<FileDescriptor>>>);
+struct FdEntry {
+    descriptor: Arc<FileDescriptor>,
+    flags: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct FdTable(Vec<Option<FdEntry>>);
 
 impl FdTable {
     pub fn new() -> Self {
@@ -111,35 +125,42 @@ impl FdTable {
         let tty: Arc<dyn FileOps> = super::tty::TTY::get();
 
         Self(alloc::vec![
-            Some(Arc::new(FileDescriptor {
+            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
                 target: Arc::clone(&tty),
                 readable: true,
                 writable: false
-            })),
-            Some(Arc::new(FileDescriptor {
+            }), flags: 0 }),
+            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
                 target: Arc::clone(&tty),
                 readable: false,
                 writable: true
-            })),
-            Some(Arc::new(FileDescriptor {
+            }), flags: 0 }),
+            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
                 target: tty,
                 readable: false,
                 writable: true
-            })),
+            }), flags: 0 }),
         ])
     }
 
     pub fn get(&self, fd: usize) -> Result<Arc<FileDescriptor>, Errno> {
         match self.0.get(fd) {
-            Some(Some(descriptor)) => Ok(Arc::clone(descriptor)),
+            Some(Some(entry)) => Ok(Arc::clone(&entry.descriptor)),
             _ => Err(Errno::EBADF),
         }
     }
 
     // Insert fd into first empty fd slot
     pub fn push(&mut self, fd: Arc<FileDescriptor>) -> Result<usize, Errno> {
+        self.push_with_flags(fd, 0)
+    }
+
+    pub fn push_with_flags(&mut self, fd: Arc<FileDescriptor>, flags: usize) -> Result<usize, Errno> {
+        if flags & !FD_CLOEXEC != 0 {
+            return Err(Errno::EINVAL);
+        }
         if let Some(fd_idx) = self.0.iter().position(Option::is_none) {
-            self.0[fd_idx] = Some(fd);
+            self.0[fd_idx] = Some(FdEntry { descriptor: fd, flags });
             return Ok(fd_idx);
         }
         if self.0.len() >= MAX_FDS {
@@ -148,7 +169,7 @@ impl FdTable {
         }
 
         let fd_idx = self.0.len();
-        self.0.push(Some(fd));
+        self.0.push(Some(FdEntry { descriptor: fd, flags }));
         Ok(fd_idx)
     }
 
@@ -161,12 +182,12 @@ impl FdTable {
             if self.0[pos].is_some() {
                 return Err(Errno::EINVAL);
             }
-            self.0[pos] = Some(fd);
+            self.0[pos] = Some(FdEntry { descriptor: fd, flags: 0 });
             return Ok(pos);
         }
 
         self.0.resize_with(pos + 1, || None);
-        self.0[pos] = Some(fd);
+        self.0[pos] = Some(FdEntry { descriptor: fd, flags: 0 });
         Ok(pos)
     }
 
@@ -199,10 +220,13 @@ impl FdTable {
             return Ok(newfd_idx.unwrap());
         }
 
-        if flags.unwrap_or(0) != 0 {
-            // NOTE: flags are currently unsupported
-            return Err(Errno::EINVAL);
-        }
+        let new_flags = match flags.unwrap_or(0) {
+            0 => 0,
+            O_CLOEXEC if newfd_idx.is_some() => FD_CLOEXEC,
+            _ => {
+                return Err(Errno::EINVAL);
+            }
+        };
 
         let Ok(oldfd) = self.get(oldfd_idx) else {
             return Err(Errno::EBADF);
@@ -210,10 +234,44 @@ impl FdTable {
         let newfd = oldfd.clone();
 
         let newfd_idx = match newfd_idx {
-            Some(newfd_idx) => self.insert(newfd, newfd_idx)?,
+            Some(newfd_idx) => {
+                if newfd_idx >= MAX_FDS {
+                    return Err(Errno::EMFILE);
+                }
+                if newfd_idx >= self.0.len() {
+                    self.0.resize_with(newfd_idx + 1, || None);
+                }
+                // dup3 atomically replaces a distinct occupied destination.
+                self.0[newfd_idx] = Some(FdEntry { descriptor: newfd, flags: new_flags });
+                newfd_idx
+            }
             None => self.push(newfd)?,
         };
 
         return Ok(newfd_idx);
+    }
+
+    pub fn get_flags(&self, fd_idx: usize) -> Result<usize, Errno> {
+        self.0.get(fd_idx).and_then(Option::as_ref).map(|entry| entry.flags).ok_or(Errno::EBADF)
+    }
+
+    pub fn set_flags(&mut self, fd_idx: usize, flags: usize) -> Result<(), Errno> {
+        if flags & !FD_CLOEXEC != 0 {
+            return Err(Errno::EINVAL);
+        }
+        let entry = self.0.get_mut(fd_idx).and_then(Option::as_mut).ok_or(Errno::EBADF)?;
+        entry.flags = flags;
+        Ok(())
+    }
+
+    pub fn close_on_exec(&mut self) {
+        for entry in &mut self.0 {
+            if entry.as_ref().is_some_and(|entry| entry.flags & FD_CLOEXEC != 0) {
+                *entry = None;
+            }
+        }
+        while self.0.last().is_some_and(Option::is_none) {
+            self.0.pop();
+        }
     }
 }

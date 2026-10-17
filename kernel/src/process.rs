@@ -442,6 +442,9 @@ impl Process {
         self.pagetable.heap_base = heap_base;
         self.pagetable.prog_break = heap_base;
 
+        // Only successful exec commits close-on-exec descriptors.
+        self.fds.close_on_exec();
+
         *self.trapframe = Trapframe::default();
         self.trapframe.sp = sp;
 

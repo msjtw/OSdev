@@ -34,6 +34,25 @@ impl Drop for OpenFD {
 }
 
 impl FileOps for OpenFD {
+    fn seek(&self, offset: isize, whence: usize) -> Result<usize, Errno> {
+        if self.kind != NodeKind::File {
+            return Err(Errno::ESPIPE);
+        }
+        let mut position = self.position.lock();
+        let base = match whence {
+            0 => 0,
+            1 => *position,
+            2 => match request(VfsRequest::Size { handle: self.handle })? {
+                VfsResponse::Size(size) => size,
+                _ => return Err(Errno::EIO),
+            },
+            _ => return Err(Errno::EINVAL),
+        };
+        let next = base.checked_add_signed(offset).ok_or(Errno::EINVAL)?;
+        *position = next;
+        Ok(next)
+    }
+
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
         if self.kind != NodeKind::File {
             return Err(Errno::EISDIR);

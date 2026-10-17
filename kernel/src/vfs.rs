@@ -89,6 +89,9 @@ pub enum VfsRequest {
         handle: VfsHandle,
         position: usize,
     },
+    Size {
+        handle: VfsHandle,
+    },
     Close {
         handle: VfsHandle,
     },
@@ -101,6 +104,7 @@ pub enum VfsResponse {
     Data(Vec<u8>),
     Written(usize),
     DirectoryEntry(Option<DirectoryEntry>),
+    Size(usize),
     Closed,
 }
 
@@ -231,6 +235,17 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
                 return Err(Errno::ENOTDIR);
             };
             Ok(VfsResponse::DirectoryEntry(entries.get(position).cloned()))
+        }
+        VfsRequest::Size { handle } => {
+            let opens = open_files().lock();
+            let Some(Ext4Open::File { fs, inode }) =
+                opens.entries.get(handle.0).and_then(Option::as_ref)
+            else {
+                return Err(Errno::EBADF);
+            };
+            let size = usize::try_from(fs.get_inode_ref(*inode).inode.size())
+                .map_err(|_| Errno::EOVERFLOW)?;
+            Ok(VfsResponse::Size(size))
         }
         VfsRequest::Close { handle } => {
             remove_open(handle)?;

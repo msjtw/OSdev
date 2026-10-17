@@ -1,7 +1,7 @@
 use crate::{
     log, process::{
         Process,
-        fd::{Errno, FileDescriptor, POLLIN, POLLNVAL, POLLOUT},
+        fd::{Errno, FileDescriptor, FD_CLOEXEC, O_CLOEXEC, POLLIN, POLLNVAL, POLLOUT},
     }, vfs, virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 use alloc::sync::Arc;
@@ -166,7 +166,6 @@ pub fn sys_fcntl(proc: &mut Process) {
     const F_SETFD: usize = 2;
     const F_GETFL: usize = 3;
     const F_SETFL: usize = 4;
-    const FD_CLOEXEC: usize = 1;
     const O_WRONLY: usize = 1;
     const O_RDWR: usize = 2;
 
@@ -182,8 +181,14 @@ pub fn sys_fcntl(proc: &mut Process) {
     };
 
     proc.trapframe.a0 = match command {
-        F_GETFD => 0,
-        F_SETFD if argument & !FD_CLOEXEC == 0 => 0,
+        F_GETFD => match proc.fds.get_flags(fd) {
+            Ok(flags) => flags,
+            Err(error) => error.into(),
+        },
+        F_SETFD => match proc.fds.set_flags(fd, argument) {
+            Ok(()) => 0,
+            Err(error) => error.into(),
+        },
         F_GETFL => match (descriptor.readable, descriptor.writable) {
             (true, true) => O_RDWR,
             (false, true) => O_WRONLY,
@@ -193,6 +198,19 @@ pub fn sys_fcntl(proc: &mut Process) {
         // request so libc can configure standard streams during startup.
         F_SETFL => 0,
         _ => Errno::EINVAL.into(),
+    };
+}
+
+pub fn sys_lseek(proc: &mut Process) {
+    let fd = proc.trapframe.a0;
+    let offset = proc.trapframe.a1 as i32 as isize;
+    let whence = proc.trapframe.a2;
+    proc.trapframe.a0 = match proc.fds.get(fd) {
+        Ok(descriptor) => match descriptor.target.seek(offset, whence) {
+            Ok(position) => position,
+            Err(error) => error.into(),
+        },
+        Err(error) => error.into(),
     };
 }
 
@@ -240,11 +258,11 @@ pub fn sys_openat(proc: &mut Process) {
             }
 
             proc.trapframe.a0 = match vfs::open_file(&path) {
-                Ok(target) => match proc.fds.push(Arc::new(FileDescriptor {
+                Ok(target) => match proc.fds.push_with_flags(Arc::new(FileDescriptor {
                     target,
                     readable: true,
                     writable: false,
-                })) {
+                }), if flags & O_CLOEXEC != 0 { FD_CLOEXEC } else { 0 }) {
                     Ok(fd) => fd,
                     Err(error) => error.into(),
                 },
