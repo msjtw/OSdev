@@ -55,7 +55,7 @@ impl Into<usize> for Errno {
             Self::ENOTTY => 25, // Inappropriate ioctl for device.
             Self::ESPIPE => 29,
             Self::EROFS => 30,
-            Self::EPIPE => 32,  // Broken pipe.
+            Self::EPIPE => 32, // Broken pipe.
             Self::ERANGE => 34,
             Self::ENAMETOOLONG => 36,
             Self::EOVERFLOW => 75,
@@ -125,21 +125,30 @@ impl FdTable {
         let tty: Arc<dyn FileOps> = super::tty::TTY::get();
 
         Self(alloc::vec![
-            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
-                target: Arc::clone(&tty),
-                readable: true,
-                writable: false
-            }), flags: 0 }),
-            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
-                target: Arc::clone(&tty),
-                readable: false,
-                writable: true
-            }), flags: 0 }),
-            Some(FdEntry { descriptor: Arc::new(FileDescriptor {
-                target: tty,
-                readable: false,
-                writable: true
-            }), flags: 0 }),
+            Some(FdEntry {
+                descriptor: Arc::new(FileDescriptor {
+                    target: Arc::clone(&tty),
+                    readable: true,
+                    writable: false
+                }),
+                flags: 0
+            }),
+            Some(FdEntry {
+                descriptor: Arc::new(FileDescriptor {
+                    target: Arc::clone(&tty),
+                    readable: false,
+                    writable: true
+                }),
+                flags: 0
+            }),
+            Some(FdEntry {
+                descriptor: Arc::new(FileDescriptor {
+                    target: tty,
+                    readable: false,
+                    writable: true
+                }),
+                flags: 0
+            }),
         ])
     }
 
@@ -155,12 +164,19 @@ impl FdTable {
         self.push_with_flags(fd, 0)
     }
 
-    pub fn push_with_flags(&mut self, fd: Arc<FileDescriptor>, flags: usize) -> Result<usize, Errno> {
+    pub fn push_with_flags(
+        &mut self,
+        fd: Arc<FileDescriptor>,
+        flags: usize,
+    ) -> Result<usize, Errno> {
         if flags & !FD_CLOEXEC != 0 {
             return Err(Errno::EINVAL);
         }
         if let Some(fd_idx) = self.0.iter().position(Option::is_none) {
-            self.0[fd_idx] = Some(FdEntry { descriptor: fd, flags });
+            self.0[fd_idx] = Some(FdEntry {
+                descriptor: fd,
+                flags,
+            });
             return Ok(fd_idx);
         }
         if self.0.len() >= MAX_FDS {
@@ -169,7 +185,10 @@ impl FdTable {
         }
 
         let fd_idx = self.0.len();
-        self.0.push(Some(FdEntry { descriptor: fd, flags }));
+        self.0.push(Some(FdEntry {
+            descriptor: fd,
+            flags,
+        }));
         Ok(fd_idx)
     }
 
@@ -182,12 +201,18 @@ impl FdTable {
             if self.0[pos].is_some() {
                 return Err(Errno::EINVAL);
             }
-            self.0[pos] = Some(FdEntry { descriptor: fd, flags: 0 });
+            self.0[pos] = Some(FdEntry {
+                descriptor: fd,
+                flags: 0,
+            });
             return Ok(pos);
         }
 
         self.0.resize_with(pos + 1, || None);
-        self.0[pos] = Some(FdEntry { descriptor: fd, flags: 0 });
+        self.0[pos] = Some(FdEntry {
+            descriptor: fd,
+            flags: 0,
+        });
         Ok(pos)
     }
 
@@ -242,7 +267,10 @@ impl FdTable {
                     self.0.resize_with(newfd_idx + 1, || None);
                 }
                 // dup3 atomically replaces a distinct occupied destination.
-                self.0[newfd_idx] = Some(FdEntry { descriptor: newfd, flags: new_flags });
+                self.0[newfd_idx] = Some(FdEntry {
+                    descriptor: newfd,
+                    flags: new_flags,
+                });
                 newfd_idx
             }
             None => self.push(newfd)?,
@@ -252,21 +280,52 @@ impl FdTable {
     }
 
     pub fn get_flags(&self, fd_idx: usize) -> Result<usize, Errno> {
-        self.0.get(fd_idx).and_then(Option::as_ref).map(|entry| entry.flags).ok_or(Errno::EBADF)
+        self.0
+            .get(fd_idx)
+            .and_then(Option::as_ref)
+            .map(|entry| entry.flags)
+            .ok_or(Errno::EBADF)
+    }
+
+    pub fn duplicate_from(
+        &mut self,
+        oldfd_idx: usize,
+        minimum: usize,
+        flags: usize,
+    ) -> Result<usize, Errno> {
+        if minimum >= MAX_FDS || flags & !FD_CLOEXEC != 0 {
+            return Err(Errno::EINVAL);
+        }
+        let descriptor = self.get(oldfd_idx)?;
+        let fd_idx = (minimum..MAX_FDS)
+            .find(|&fd_idx| self.0.get(fd_idx).is_none_or(Option::is_none))
+            .ok_or(Errno::EMFILE)?;
+        if fd_idx >= self.0.len() {
+            self.0.resize_with(fd_idx + 1, || None);
+        }
+        self.0[fd_idx] = Some(FdEntry { descriptor, flags });
+        Ok(fd_idx)
     }
 
     pub fn set_flags(&mut self, fd_idx: usize, flags: usize) -> Result<(), Errno> {
         if flags & !FD_CLOEXEC != 0 {
             return Err(Errno::EINVAL);
         }
-        let entry = self.0.get_mut(fd_idx).and_then(Option::as_mut).ok_or(Errno::EBADF)?;
+        let entry = self
+            .0
+            .get_mut(fd_idx)
+            .and_then(Option::as_mut)
+            .ok_or(Errno::EBADF)?;
         entry.flags = flags;
         Ok(())
     }
 
     pub fn close_on_exec(&mut self) {
         for entry in &mut self.0 {
-            if entry.as_ref().is_some_and(|entry| entry.flags & FD_CLOEXEC != 0) {
+            if entry
+                .as_ref()
+                .is_some_and(|entry| entry.flags & FD_CLOEXEC != 0)
+            {
                 *entry = None;
             }
         }

@@ -1,5 +1,6 @@
 mod file;
 mod openfd;
+mod dev;
 
 use alloc::{string::String, sync::Arc, vec, vec::Vec};
 
@@ -9,12 +10,16 @@ use spin::Once;
 use crate::{
     fs,
     lock::IntMutex,
-    process::fd::{Errno, FileOps},
+    process::{Process, fd::{Errno, FileOps}},
 };
 
 pub use file::{AccessMode, DirectoryEntry, FileMetadata, NodeKind, VfsHandle, VfsNode};
 
 pub const BLOCK_SIZE: usize = ext4_rs::BLOCK_SIZE;
+
+pub fn is_builtin_device(path: &str) -> bool {
+    dev::is_device(path)
+}
 
 pub fn resolve_path(cwd: &str, path: &str) -> Result<String, Errno> {
     if path.is_empty() {
@@ -150,30 +155,38 @@ fn remove_open(handle: VfsHandle) -> Result<(), Errno> {
 pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
     match request {
         VfsRequest::Lookup { path } => {
+            if let Some(node) = dev::node(&path) {
+                return node.map(VfsResponse::Node);
+            }
             let (fs, inode) = lookup(&path)?;
             Ok(VfsResponse::Node(node(&fs, inode)))
         }
         VfsRequest::Open { path, access } => {
+            if path == "/dev" {
+                if !matches!(access, AccessMode::ReadOnly) {
+                    return Err(Errno::EROFS);
+                }
+                let handle = insert_open(Ext4Open::Directory { entries: dev::directory_entries() })?;
+                return Ok(VfsResponse::Opened { handle, kind: NodeKind::Directory });
+            }
             let (fs, inode) = lookup(&path)?;
             let inode_ref = fs.get_inode_ref(inode);
             let (open, kind) = if inode_ref.inode.is_dir() {
                 if !matches!(access, AccessMode::ReadOnly) {
                     return Err(Errno::EROFS);
                 }
-                (
-                    Ext4Open::Directory {
-                        entries: fs
-                            .dir_get_entries(inode)
-                            .into_iter()
-                            .map(|entry| DirectoryEntry {
-                                inode: entry.inode as u64,
-                                file_type: entry.get_de_type(),
-                                name: entry.name[..entry.get_name_len()].to_vec(),
-                            })
-                            .collect(),
-                    },
-                    NodeKind::Directory,
-                )
+                let mut entries: Vec<DirectoryEntry> = fs.dir_get_entries(inode)
+                    .into_iter()
+                    .map(|entry| DirectoryEntry {
+                        inode: entry.inode as u64,
+                        file_type: entry.get_de_type(),
+                        name: entry.name[..entry.get_name_len()].to_vec(),
+                    })
+                    .collect();
+                if path == "/" && !entries.iter().any(|entry| entry.name == b"dev") {
+                    entries.push(dev::root_entry());
+                }
+                (Ext4Open::Directory { entries }, NodeKind::Directory)
             } else if inode_ref.inode.is_file() {
                 if !matches!(access, AccessMode::ReadOnly) {
                     return Err(Errno::EROFS);
@@ -186,6 +199,9 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
             Ok(VfsResponse::Opened { handle, kind })
         }
         VfsRequest::Metadata { path } => {
+            if let Some(node) = dev::node(&path) {
+                return node.map(|node| VfsResponse::Metadata(node.metadata));
+            }
             let (fs, inode) = lookup(&path)?;
             Ok(VfsResponse::Metadata(node(&fs, inode).metadata))
         }
@@ -291,10 +307,13 @@ fn node(fs: &Ext4, inode: u32) -> VfsNode {
     }
 }
 
-pub fn open_file(path: &str) -> Result<Arc<dyn FileOps>, Errno> {
+pub fn open_file(proc: &Process, path: &str, access: AccessMode) -> Result<Arc<dyn FileOps>, Errno> {
+    if let Some(target) = dev::open(proc, path, access) {
+        return target;
+    }
     match request(VfsRequest::Open {
         path: String::from(path),
-        access: AccessMode::ReadOnly,
+        access,
     })? {
         VfsResponse::Opened { handle, kind } => Ok(Arc::new(openfd::OpenFD::new(handle, kind))),
         _ => Err(Errno::EIO),

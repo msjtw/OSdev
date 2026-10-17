@@ -162,10 +162,12 @@ pub fn sys_dup3(proc: &mut Process) {
 }
 
 pub fn sys_fcntl(proc: &mut Process) {
+    const F_DUPFD: usize = 0;
     const F_GETFD: usize = 1;
     const F_SETFD: usize = 2;
     const F_GETFL: usize = 3;
     const F_SETFL: usize = 4;
+    const F_DUPFD_CLOEXEC: usize = 1030;
     const O_WRONLY: usize = 1;
     const O_RDWR: usize = 2;
 
@@ -181,6 +183,10 @@ pub fn sys_fcntl(proc: &mut Process) {
     };
 
     proc.trapframe.a0 = match command {
+        F_DUPFD => match proc.fds.duplicate_from(fd, argument, 0) {
+            Ok(new_fd) => new_fd,
+            Err(error) => error.into(),
+        },
         F_GETFD => match proc.fds.get_flags(fd) {
             Ok(flags) => flags,
             Err(error) => error.into(),
@@ -197,6 +203,10 @@ pub fn sys_fcntl(proc: &mut Process) {
         // The current descriptors have no mutable status flags.  Accept the
         // request so libc can configure standard streams during startup.
         F_SETFL => 0,
+        F_DUPFD_CLOEXEC => match proc.fds.duplicate_from(fd, argument, FD_CLOEXEC) {
+            Ok(new_fd) => new_fd,
+            Err(error) => error.into(),
+        },
         _ => Errno::EINVAL.into(),
     };
 }
@@ -219,9 +229,6 @@ pub fn sys_openat(proc: &mut Process) {
     const AT_FDCWD: usize = (-100isize) as usize;
 
     const O_ACCMODE: usize = 3;
-    const O_RDONLY: usize = 0;
-    const O_WRONLY: usize = 1;
-    const O_RDWR: usize = 2;
     const O_CREAT: usize = 0x40;
     const O_TRUNC: usize = 0x200;
 
@@ -238,7 +245,7 @@ pub fn sys_openat(proc: &mut Process) {
                 flags,
                 proc.trapframe.a3
             );
-            if dirfd != AT_FDCWD || flags & (O_CREAT | O_TRUNC) != 0 {
+            if dirfd != AT_FDCWD {
                 proc.trapframe.a0 = Errno::EROFS.into();
                 return;
             }
@@ -250,21 +257,36 @@ pub fn sys_openat(proc: &mut Process) {
                     return;
                 }
             };
-
-            // TODO: currently only read only, no journaling
-            if flags & O_ACCMODE != O_RDONLY {
+            if flags & (O_CREAT | O_TRUNC) != 0 && !vfs::is_builtin_device(&path) {
                 proc.trapframe.a0 = Errno::EROFS.into();
                 return;
             }
 
-            proc.trapframe.a0 = match vfs::open_file(&path) {
-                Ok(target) => match proc.fds.push_with_flags(Arc::new(FileDescriptor {
+            let access = match flags & O_ACCMODE {
+                0 => vfs::AccessMode::ReadOnly,
+                1 => vfs::AccessMode::WriteOnly,
+                2 => vfs::AccessMode::ReadWrite,
+                _ => {
+                    proc.trapframe.a0 = Errno::EINVAL.into();
+                    return;
+                }
+            };
+            let (readable, writable) = match access {
+                vfs::AccessMode::ReadOnly => (true, false),
+                vfs::AccessMode::WriteOnly => (false, true),
+                vfs::AccessMode::ReadWrite => (true, true),
+            };
+
+            proc.trapframe.a0 = match vfs::open_file(proc, &path, access) {
+                Ok(target) => {
+                    match proc.fds.push_with_flags(Arc::new(FileDescriptor {
                     target,
-                    readable: true,
-                    writable: false,
-                }), if flags & O_CLOEXEC != 0 { FD_CLOEXEC } else { 0 }) {
+                    readable,
+                    writable,
+                    }), if flags & O_CLOEXEC != 0 { FD_CLOEXEC } else { 0 }) {
                     Ok(fd) => fd,
                     Err(error) => error.into(),
+                    }
                 },
                 Err(error) => error.into(),
             };
