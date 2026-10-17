@@ -16,6 +16,51 @@ pub use file::{AccessMode, DirectoryEntry, FileMetadata, NodeKind, VfsHandle, Vf
 
 pub const BLOCK_SIZE: usize = ext4_rs::BLOCK_SIZE;
 
+pub fn resolve_path(cwd: &str, path: &str) -> Result<String, Errno> {
+    if path.is_empty() {
+        return Err(Errno::ENOENT);
+    }
+
+    let mut components = Vec::<&str>::new();
+    let inputs: &[&str] = if path.starts_with('/') {
+        &[path]
+    } else {
+        &[cwd, path]
+    };
+    for input in inputs {
+        for component in input.split('/') {
+            match component {
+                "" | "." => {}
+                ".." => {
+                    components.pop();
+                }
+                component => {
+                    components.try_reserve(1).map_err(|_| Errno::ENOMEM)?;
+                    components.push(component);
+                }
+            }
+        }
+    }
+
+    let mut length = 1usize;
+    for component in &components {
+        length = length
+            .checked_add(component.len())
+            .and_then(|length| length.checked_add(1))
+            .ok_or(Errno::ENAMETOOLONG)?;
+    }
+    let mut resolved = String::new();
+    resolved.try_reserve(length).map_err(|_| Errno::ENOMEM)?;
+    resolved.push('/');
+    for (index, component) in components.iter().enumerate() {
+        if index != 0 {
+            resolved.push('/');
+        }
+        resolved.push_str(component);
+    }
+    Ok(resolved)
+}
+
 pub enum VfsRequest {
     Lookup {
         path: String,

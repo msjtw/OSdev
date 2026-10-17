@@ -267,6 +267,7 @@ impl Process {
         child_proc.pagetable = uvm;
 
         child_proc.fds = self.fds.clone();
+        child_proc.cwd = self.cwd.clone();
 
         let pid_bytes = (child_pid as u32).to_ne_bytes();
         if let Some(addr) = child_tid {
@@ -308,6 +309,7 @@ impl Process {
         if argv.len() > 64 || arg_bytes > 16 * 1024 {
             return Err(Errno::E2BIG);
         }
+        let path = crate::vfs::resolve_path(self.cwd.as_deref().unwrap_or("/"), &path)?;
         let img = crate::vfs::read_all(&path)?;
         let entry = elf::get_elf_entry(&img).map_err(|_| Errno::ENOEXEC)?;
 

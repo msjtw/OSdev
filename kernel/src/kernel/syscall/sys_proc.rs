@@ -6,6 +6,7 @@ use crate::{
         ForkError, Process,
         fd::Errno,
     },
+    vfs::{self, NodeKind, VfsRequest, VfsResponse},
     virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 
@@ -135,6 +136,33 @@ pub fn sys_getcwd(proc: &mut Process) {
         Ok(()) => addr,
         Err(()) => Errno::EFAULT.into(),
     };
+}
+
+/// Change the calling process's current working directory.
+pub fn sys_chdir(proc: &mut Process) {
+    let path = match copy_in_str(&mut proc.pagetable, proc.trapframe.a0) {
+        Ok(path) => path,
+        Err(()) => {
+            proc.trapframe.a0 = Errno::EFAULT.into();
+            return;
+        }
+    };
+    let path = match vfs::resolve_path(proc.cwd.as_deref().unwrap_or("/"), &path) {
+        Ok(path) => path,
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
+        }
+    };
+    match vfs::request(VfsRequest::Lookup { path: path.clone() }) {
+        Ok(VfsResponse::Node(node)) if node.kind == NodeKind::Directory => {
+            proc.cwd = Some(path);
+            proc.trapframe.a0 = 0;
+        }
+        Ok(VfsResponse::Node(_)) => proc.trapframe.a0 = Errno::ENOTDIR.into(),
+        Ok(_) => proc.trapframe.a0 = Errno::EIO.into(),
+        Err(error) => proc.trapframe.a0 = error.into(),
+    }
 }
 
 // returns  system  information  in  the structure pointed to by buf.

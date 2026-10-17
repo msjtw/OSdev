@@ -225,18 +225,11 @@ pub fn sys_openat(proc: &mut Process) {
                 return;
             }
 
-            let path = if path.starts_with('/') {
-                // If the pathname given in path is absolute, then dirfd is ignored.
-                path
-            } else {
-                // If the pathname given in path is relative
-                if dirfd == AT_FDCWD {
-                    // and dirfd is the special value AT_FDCWD, then path is interpreted relative
-                    // to the current working directory of the calling process
-                    alloc::format!("/{}", path)
-                } else {
-                    // then it is interpreted relative to the directory referred to by the file descriptor dirfd
-                    alloc::format!("/{}", path)
+            let path = match vfs::resolve_path(proc.cwd.as_deref().unwrap_or("/"), &path) {
+                Ok(path) => path,
+                Err(error) => {
+                    proc.trapframe.a0 = error.into();
+                    return;
                 }
             };
 
@@ -325,14 +318,11 @@ pub fn sys_statx(proc: &mut Process) {
             return;
         }
     };
-    let path = if path.starts_with('/') {
-        path
-    } else {
-        let cwd = proc.cwd.as_deref().unwrap_or("/");
-        if cwd == "/" {
-            alloc::format!("/{path}")
-        } else {
-            alloc::format!("{cwd}/{path}")
+    let path = match vfs::resolve_path(proc.cwd.as_deref().unwrap_or("/"), &path) {
+        Ok(path) => path,
+        Err(error) => {
+            proc.trapframe.a0 = error.into();
+            return;
         }
     };
 

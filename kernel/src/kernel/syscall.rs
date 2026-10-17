@@ -21,6 +21,7 @@ use crate::{
 
 // Linux RISC-V syscall numbers.
 pub const SYS_GETCWD: usize = 17;
+pub const SYS_CHDIR: usize = 49;
 pub const SYS_IOCTL: usize = 29;
 pub const SYS_FCNTL: usize = 25;
 pub const SYS_DUP: usize = 23;
@@ -75,6 +76,7 @@ pub fn syscall(proc: &mut Process) {
 
     match sys_num {
         SYS_GETCWD => sys_getcwd(proc),
+        SYS_CHDIR => sys_chdir(proc),
         SYS_DUP => sys_dup(proc),
         SYS_DUP3 => sys_dup3(proc),
         SYS_CLOSE => sys_close(proc),
