@@ -2,6 +2,7 @@ mod sys_file;
 mod sys_memory;
 mod sys_proc;
 mod sys_signals;
+mod sys_shutdown;
 mod sys_time;
 
 use crate::{
@@ -13,6 +14,7 @@ use crate::{
         sys_memory::{sys_brk, sys_mmap, sys_munmap},
         sys_proc::*,
         sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask},
+        sys_shutdown::{sys_kill, sys_reboot, sys_sync},
         sys_time::{sys_clock_getres_time64, sys_clock_gettime64, sys_clock_nanosleep_time64},
     },
     log,
@@ -37,6 +39,9 @@ pub const SYS_WRITEV: usize = 66;
 pub const SYS_EXIT: usize = 93;
 pub const SYS_EXIT_GROUP: usize = 94;
 pub const SYS_WAITID: usize = 95;
+pub const SYS_SYNC: usize = 81;
+pub const SYS_KILL: usize = 129;
+pub const SYS_REBOOT: usize = 142;
 pub const SYS_SET_TID_ADDRESS: usize = 96;
 pub const SYS_RT_SIGPROCMASK: usize = 135;
 pub const SYS_RT_SIGACTION: usize = 134;
@@ -78,6 +83,9 @@ pub fn syscall(proc: &mut Process) {
     match sys_num {
         SYS_GETCWD => sys_getcwd(proc),
         SYS_CHDIR => sys_chdir(proc),
+        SYS_SYNC => sys_sync(proc),
+        SYS_KILL => sys_kill(proc),
+        SYS_REBOOT => sys_reboot(proc),
         SYS_DUP => sys_dup(proc),
         SYS_DUP3 => sys_dup3(proc),
         SYS_CLOSE => sys_close(proc),

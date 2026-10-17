@@ -1,6 +1,7 @@
 mod file;
 mod openfd;
 mod dev;
+mod proc;
 
 use alloc::{string::String, sync::Arc, vec, vec::Vec};
 
@@ -158,6 +159,9 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
             if let Some(node) = dev::node(&path) {
                 return node.map(VfsResponse::Node);
             }
+            if let Some(node) = proc::node(&path) {
+                return node.map(VfsResponse::Node);
+            }
             let (fs, inode) = lookup(&path)?;
             Ok(VfsResponse::Node(node(&fs, inode)))
         }
@@ -167,6 +171,13 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
                     return Err(Errno::EROFS);
                 }
                 let handle = insert_open(Ext4Open::Directory { entries: dev::directory_entries() })?;
+                return Ok(VfsResponse::Opened { handle, kind: NodeKind::Directory });
+            }
+            if path == "/proc" {
+                if !matches!(access, AccessMode::ReadOnly) {
+                    return Err(Errno::EROFS);
+                }
+                let handle = insert_open(Ext4Open::Directory { entries: proc::directory_entries() })?;
                 return Ok(VfsResponse::Opened { handle, kind: NodeKind::Directory });
             }
             let (fs, inode) = lookup(&path)?;
@@ -186,6 +197,9 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
                 if path == "/" && !entries.iter().any(|entry| entry.name == b"dev") {
                     entries.push(dev::root_entry());
                 }
+                if path == "/" && !entries.iter().any(|entry| entry.name == b"proc") {
+                    entries.push(proc::root_entry());
+                }
                 (Ext4Open::Directory { entries }, NodeKind::Directory)
             } else if inode_ref.inode.is_file() {
                 if !matches!(access, AccessMode::ReadOnly) {
@@ -202,10 +216,16 @@ pub fn request(request: VfsRequest) -> Result<VfsResponse, Errno> {
             if let Some(node) = dev::node(&path) {
                 return node.map(|node| VfsResponse::Metadata(node.metadata));
             }
+            if let Some(node) = proc::node(&path) {
+                return node.map(|node| VfsResponse::Metadata(node.metadata));
+            }
             let (fs, inode) = lookup(&path)?;
             Ok(VfsResponse::Metadata(node(&fs, inode).metadata))
         }
         VfsRequest::ReadAll { path } => {
+            if let Some(data) = proc::read_all(&path) {
+                return data.map(VfsResponse::Data);
+            }
             let (fs, inode) = lookup(&path)?;
             let inode_ref = fs.get_inode_ref(inode);
             if !inode_ref.inode.is_file() {
@@ -309,6 +329,9 @@ fn node(fs: &Ext4, inode: u32) -> VfsNode {
 
 pub fn open_file(proc: &Process, path: &str, access: AccessMode) -> Result<Arc<dyn FileOps>, Errno> {
     if let Some(target) = dev::open(proc, path, access) {
+        return target;
+    }
+    if let Some(target) = proc::open(path, access) {
         return target;
     }
     match request(VfsRequest::Open {
