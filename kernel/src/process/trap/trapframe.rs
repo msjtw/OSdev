@@ -39,6 +39,12 @@ pub struct Trapframe {
     t6: usize,
 }
 
+impl Trapframe {
+    pub fn set_return_address(&mut self, address: usize) {
+        self.ra = address;
+    }
+}
+
 // impl Trapframe {
 //     pub fn new() -> Self {
 //

@@ -6,6 +6,7 @@ use crate::{
     process::{
         ProcState, Process,
         fd::{Errno, FileDescriptor, FileOps, POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
+        signals,
     },
     structures::RingBuffer,
     virtmemory::{copy_in_cont, copy_out_cont},
@@ -61,6 +62,9 @@ impl FileOps for PipeReadEnd {
         let mut bytes = [0u8; PIPE_IO_CHUNK];
 
         loop {
+            if signals::has_unblocked_pending(proc) {
+                return Err(Errno::EINTR);
+            }
             let mut count = 0;
             let mut sleeping = false;
 
@@ -136,6 +140,9 @@ impl FileOps for PipeWriteEnd {
             copy_in_cont(&mut proc.pagetable, addr, requested).map_err(|()| Errno::EFAULT)?;
 
         loop {
+            if signals::has_unblocked_pending(proc) {
+                return Err(Errno::EINTR);
+            }
             let mut written = 0;
             let mut sleeping = false;
 

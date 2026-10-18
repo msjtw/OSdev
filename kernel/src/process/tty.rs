@@ -175,8 +175,11 @@ impl TTY {
         }
     }
 
-    fn read_blocking(&self, proc: &mut Process, len: usize) -> alloc::vec::Vec<u8> {
+    fn read_blocking(&self, proc: &mut Process, len: usize) -> Result<alloc::vec::Vec<u8>, Errno> {
         loop {
+            if signals::has_unblocked_pending(proc) {
+                return Err(Errno::EINTR);
+            }
             let canonical = self.termios.lock().c_lflag & ICANON != 0;
             let bytes = {
                 let mut input = self.input.lock();
@@ -189,7 +192,7 @@ impl TTY {
                 bytes
             };
             if !bytes.is_empty() {
-                return bytes;
+                return Ok(bytes);
             }
 
             unsafe { proc.sleep_locked() };
@@ -222,7 +225,7 @@ impl FileOps for TTY {
             return Ok(0);
         }
 
-        let bytes = self.read_blocking(proc, len);
+        let bytes = self.read_blocking(proc, len)?;
         copy_out_cont(&mut proc.pagetable, addr, &bytes)
             .map(|()| bytes.len())
             .map_err(|()| Errno::EFAULT)

@@ -1,7 +1,7 @@
 use crate::{
     log, process::{
         Process,
-        fd::{Errno, FileDescriptor, FD_CLOEXEC, O_CLOEXEC, POLLIN, POLLNVAL, POLLOUT},
+        fd::{Errno, FileDescriptor, FD_CLOEXEC, O_CLOEXEC},
         pipe::new_pipe,
         poll,
     }, vfs, virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},

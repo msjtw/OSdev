@@ -89,3 +89,9 @@ pub fn sys_rt_sigprocmask(proc: &mut Process) {
     }
     proc.trapframe.a0 = 0;
 }
+
+pub fn sys_rt_sigreturn(proc: &mut Process) {
+    if let Err(error) = signals::rt_sigreturn(proc) {
+        proc.trapframe.a0 = error.into();
+    }
+}

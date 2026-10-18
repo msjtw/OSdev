@@ -14,7 +14,7 @@ use crate::{
         },
         sys_memory::{sys_brk, sys_mmap, sys_munmap},
         sys_proc::*,
-        sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask},
+        sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask, sys_rt_sigreturn},
         sys_shutdown::{sys_kill, sys_reboot, sys_sync},
         sys_time::{sys_clock_getres_time64, sys_clock_gettime64, sys_clock_nanosleep_time64},
     },
@@ -46,6 +46,7 @@ pub const SYS_REBOOT: usize = 142;
 pub const SYS_SET_TID_ADDRESS: usize = 96;
 pub const SYS_RT_SIGPROCMASK: usize = 135;
 pub const SYS_RT_SIGACTION: usize = 134;
+pub const SYS_RT_SIGRETURN: usize = 139;
 pub const SYS_SETGID: usize = 144;
 pub const SYS_SETUID: usize = 146;
 pub const SYS_SETPGID: usize = 154;
@@ -101,6 +102,7 @@ pub fn syscall(proc: &mut Process) {
         SYS_FCNTL => sys_fcntl(proc),
         SYS_RT_SIGACTION => sys_rt_sigaction(proc),
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(proc),
+        SYS_RT_SIGRETURN => sys_rt_sigreturn(proc),
         SYS_UNAME => sys_uname(proc),
         SYS_GETPID => sys_getpid(proc),
         SYS_GETPPID => sys_getppid(proc),

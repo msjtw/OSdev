@@ -443,8 +443,13 @@ impl Process {
         self.pagetable.heap_base = heap_base;
         self.pagetable.prog_break = heap_base;
 
-        // Only successful exec commits close-on-exec descriptors.
         self.fds.close_on_exec();
+
+        for action in &mut self.signal_actions {
+            if action.handler != signals::SIG_DFL && action.handler != signals::SIG_IGN {
+                *action = signals::SigAction::default();
+            }
+        }
 
         *self.trapframe = Trapframe::default();
         self.trapframe.sp = sp;
@@ -494,8 +499,11 @@ impl Process {
         panic!("cordyceps")
     }
 
-    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32, Option<u32>)>, ()> {
+    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32, Option<u32>)>, fd::Errno> {
         loop {
+            if signals::has_unblocked_pending(self) {
+                return Err(fd::Errno::EINTR);
+            }
             let parent_pid = self.pid;
             let mut has_kids = false;
             let mut zombie_pid = None;
@@ -542,7 +550,7 @@ impl Process {
             }
 
             if !has_kids {
-                return Err(());
+                return Err(fd::Errno::ECHILD);
             }
 
             if nohang {

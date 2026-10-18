@@ -1,6 +1,6 @@
 use core::ptr::write_volatile;
 
-use crate::process::{Process, fd::Errno};
+use crate::process::{Process, fd::Errno, signals};
 
 const LINUX_REBOOT_MAGIC1: usize = 0xfee1_dead;
 const LINUX_REBOOT_MAGIC2: [usize; 3] = [0x2812_1969, 0x0512_1996, 0x1604_1998];
@@ -15,12 +15,18 @@ pub fn sys_sync(proc: &mut Process) {
 
 
 pub fn sys_kill(proc: &mut Process) {
-    let target = proc.trapframe.a0 as isize;
-    let signal = proc.trapframe.a1;
-    if target == 1 && signal == SIGUSR2 {
+    // BusyBox poweroff(8) in the supplied rootfs asks PID 1 to handle
+    // SIGUSR2. There is no separate user-space init service yet, so retain
+    // this QEMU lifecycle compatibility hook; all other kill calls below use
+    // normal scoped signal delivery.
+    if proc.trapframe.a0 == 1 && proc.trapframe.a1 == SIGUSR2 {
         power_off();
     }
-    proc.trapframe.a0 = if signal <= 64 { 0 } else { Errno::EINVAL.into() };
+    let result = signals::send(proc, proc.trapframe.a0 as isize, proc.trapframe.a1);
+    proc.trapframe.a0 = match result {
+        Ok(()) => 0,
+        Err(error) => error.into(),
+    };
 }
 
 pub fn sys_reboot(proc: &mut Process) {

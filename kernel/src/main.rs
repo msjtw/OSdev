@@ -99,6 +99,7 @@ pub extern "C" fn main() -> ! {
         unsafe { user_p0.lock.unlock_manual() };
         user_p0.fds = process::fd::FdTable::new_with_tty();
         user_p0.sid = user_p0.pid;
+        user_p0.pgid = user_p0.pid;
         process::tty::TTY::set_controlling_session(user_p0.sid.unwrap());
         user_p0
             .kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])

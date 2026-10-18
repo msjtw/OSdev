@@ -336,7 +336,7 @@ pub fn sys_waitid(proc: &mut Process) {
             }
         }
         Ok(None) => proc.trapframe.a0 = 0,
-        Err(()) => proc.trapframe.a0 = Errno::ECHILD.into(),
+        Err(error) => proc.trapframe.a0 = error.into(),
     }
 }
 
