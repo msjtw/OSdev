@@ -21,6 +21,17 @@ impl<T> IntMutex<T> {
         IntMutexGuard(Some(guard))
     }
 
+    pub fn try_lock(&self) -> Option<IntMutexGuard<'_, T>> {
+        unsafe { crate::CPU.push_interrupt_off() };
+        match self.0.try_lock() {
+            Some(guard) => Some(IntMutexGuard(Some(guard))),
+            None => {
+                unsafe { crate::CPU.pop_interrupt_off() };
+                None
+            }
+        }
+    }
+
     pub unsafe fn lock_manual(&self) {
         unsafe {
             crate::CPU.push_interrupt_off();

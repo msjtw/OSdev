@@ -255,6 +255,7 @@ unsafe fn timer(proc: Option<&mut Process>) {
 
         // poll uart on timer
         crate::process::tty::TTY::get().poll_input();
+        crate::drivers::block::periodic_flush();
 
         // wakeup timer sleeping processes
         {

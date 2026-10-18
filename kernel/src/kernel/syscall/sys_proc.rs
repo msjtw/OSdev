@@ -138,7 +138,7 @@ pub fn sys_getcwd(proc: &mut Process) {
     };
 }
 
-/// Change the calling process's current working directory.
+// Change the calling process's current working directory.
 pub fn sys_chdir(proc: &mut Process) {
     let path = match copy_in_str(&mut proc.pagetable, proc.trapframe.a0) {
         Ok(path) => path,
