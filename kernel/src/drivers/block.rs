@@ -234,9 +234,13 @@ pub fn discover() -> Option<SharedBlockDevice> {
     Some(device)
 }
 
-/// Timer-context best-effort write-back. A failed flush retains dirty entries
-/// for retry and is reported once per periodic attempt; M-041 will make sync
-/// and controlled shutdown return/report failures to userspace.
+pub fn flush_all() -> Result<(), ()> {
+    let Some(device) = DISCOVERED.get() else {
+        return Ok(());
+    };
+    device.lock().flush()
+}
+
 pub fn periodic_flush() {
     if TIMER_TICKS.fetch_add(1, Ordering::Relaxed) % PERIODIC_FLUSH_TICKS != 0 {
         return;
@@ -244,8 +248,6 @@ pub fn periodic_flush() {
     let Some(device) = DISCOVERED.get() else {
         return;
     };
-    // Never spin from timer context: a timer can interrupt a filesystem read
-    // that owns this lock. The next periodic tick retries a skipped flush.
     let Some(mut device) = device.try_lock() else {
         return;
     };
