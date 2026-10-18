@@ -5,7 +5,7 @@ use crate::{
     lock::IntMutex,
     process::{
         ProcState, Process,
-        fd::{Errno, FileDescriptor, FileOps},
+        fd::{Errno, FileDescriptor, FileOps, POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
     },
     structures::RingBuffer,
     virtmemory::{copy_in_cont, copy_out_cont},
@@ -44,6 +44,15 @@ fn wake(channel: usize, wake_all: bool) {
 }
 
 impl FileOps for PipeReadEnd {
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let state = self.state.lock();
+        if events & POLLIN != 0 && (state.buffer.available() != 0 || state.writers == 0) {
+            POLLIN
+        } else {
+            0
+        }
+    }
+
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {
         if len == 0 {
             return Ok(0);
@@ -79,6 +88,7 @@ impl FileOps for PipeReadEnd {
 
             if count != 0 {
                 wake(write_channel(&self.state), false);
+                wake_poll_waiters();
                 return copy_out_cont(&mut proc.pagetable, addr, &bytes[..count])
                     .map(|()| count)
                     .map_err(|()| Errno::EFAULT);
@@ -103,6 +113,15 @@ impl FileOps for PipeReadEnd {
 }
 
 impl FileOps for PipeWriteEnd {
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let state = self.state.lock();
+        if events & POLLOUT != 0 && state.readers != 0 && state.buffer.free_space() != 0 {
+            POLLOUT
+        } else {
+            0
+        }
+    }
+
     fn read(&self, _proc: &mut Process, _addr: usize, _len: usize) -> Result<usize, Errno> {
         Err(Errno::EBADF)
     }
@@ -142,6 +161,7 @@ impl FileOps for PipeWriteEnd {
 
             if written != 0 {
                 wake(read_channel(&self.state), false);
+                wake_poll_waiters();
                 return Ok(written);
             }
 
@@ -165,6 +185,7 @@ impl Drop for PipeReadEnd {
         }
         // Every blocked writer must observe that there are no more readers.
         wake(write_channel(&self.state), true);
+        wake_poll_waiters();
     }
 }
 
@@ -177,6 +198,7 @@ impl Drop for PipeWriteEnd {
         }
         // Every blocked reader must observe EOF once all writers are gone.
         wake(read_channel(&self.state), true);
+        wake_poll_waiters();
     }
 }
 

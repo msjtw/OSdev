@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use alloc::{sync::Arc, vec::Vec};
 
-use crate::process::Process;
+use crate::{KERNEL, process::Process};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Errno {
@@ -68,6 +68,16 @@ pub type PollEvents = i16;
 pub const POLLIN: PollEvents = 0x001;
 pub const POLLOUT: PollEvents = 0x004;
 pub const POLLNVAL: PollEvents = 0x020;
+
+static POLL_CHANNEL: u8 = 0;
+
+pub fn poll_channel() -> usize {
+    &POLL_CHANNEL as *const u8 as usize
+}
+
+pub fn wake_poll_waiters() {
+    KERNEL.get().unwrap().lock().wakeup(Some(poll_channel()), true);
+}
 
 pub trait FileOps: Send + Sync {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;

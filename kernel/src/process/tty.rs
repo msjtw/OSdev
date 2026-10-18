@@ -1,7 +1,6 @@
 use alloc::{
     collections::VecDeque,
     sync::Arc,
-    vec::{self, Vec},
 };
 use spin::Once;
 
@@ -11,10 +10,9 @@ use crate::{
     lock::IntMutex,
     process::{
         ProcState, Process,
-        fd::{Errno, FileOps, POLLIN, POLLOUT, PollEvents},
+        fd::{Errno, FileOps, POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
         signals::{self, SIGINT},
     },
-    structures::RingBuffer,
     virtmemory::{copy_in, copy_in_cont, copy_out, copy_out_cont},
 };
 
@@ -23,7 +21,6 @@ const ECHO: u32 = 0o000010;
 const ICANON: u32 = 0o000002;
 const ISIG: u32 = 0o000001;
 const VINTR: usize = 0;
-const INPUT_QUEUE_CAPACITY: usize = 256;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -174,6 +171,7 @@ impl TTY {
                 .unwrap()
                 .lock()
                 .wakeup(Some(self.input_channel()), false);
+            wake_poll_waiters();
         }
     }
 
@@ -202,9 +200,8 @@ impl TTY {
 impl FileOps for TTY {
     fn poll(&self, events: PollEvents) -> PollEvents {
         let mut ready = 0;
-        // ppoll does not yet sleep on the TTY input channel, so report stdin
-        // as readable and let read_blocking() provide the blocking behavior.
-        if events & POLLIN != 0 {
+        let canonical = self.termios.lock().c_lflag & ICANON != 0;
+        if events & POLLIN != 0 && self.input.lock().readable(canonical) != 0 {
             ready |= POLLIN;
         }
 

@@ -4,7 +4,7 @@ use crate::{
     lock::IntMutex,
     process::{
         Process,
-        fd::{Errno, FileOps},
+        fd::{Errno, FileOps, PollEvents},
     },
     virtmemory::{copy_in_cont, copy_out_cont},
 };
@@ -91,6 +91,10 @@ impl FileOps for OpenFD {
 
     fn ioctl(&self, _proc: &mut Process, _op: usize, _arg: usize) -> Result<usize, Errno> {
         Err(Errno::ENOTTY)
+    }
+
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        events
     }
 
     fn getdents64(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno> {

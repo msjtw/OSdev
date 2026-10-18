@@ -1,6 +1,7 @@
 mod elf;
 pub mod fd;
 pub mod pipe;
+pub mod poll;
 pub mod signals;
 pub mod trap;
 pub(crate) mod tty;
