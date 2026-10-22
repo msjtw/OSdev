@@ -4,11 +4,9 @@ use core::{
     ptr::{NonNull, write_bytes},
 };
 
-use alloc::alloc::Allocator;
+use crate::HEAP_ALLOCATOR;
 
-use crate::{FRAME_ALLOCATOR, HEAP_ALLOCATOR, process::trap::trampoline::_trampoline, write_csr};
-
-use super::{KERNEL_START, PAGE_LAYOUT, PAGESIZE, RAMEND, TRAMPOLINE, UART, etext};
+use super::{PAGE_LAYOUT, PAGESIZE, WalkType};
 
 pub const PTE_R: usize = 0b10;
 pub const PTE_W: usize = 0b100;
@@ -33,7 +31,6 @@ struct Pte {
     pub v: bool,
     pub perm: usize,
 }
-
 impl From<usize> for Pte {
     fn from(pte: usize) -> Self {
         Pte {
@@ -274,63 +271,5 @@ impl PageTable {
             va += PAGESIZE;
         }
         Ok(())
-    }
-}
-
-#[derive(PartialEq, Eq)]
-enum WalkType {
-    Alloc,
-    Walk,
-}
-
-#[derive(Debug)]
-pub struct Kvm {
-    pagetable: PageTable,
-}
-
-impl Kvm {
-    pub fn init() -> Result<Kvm, ()> {
-        let trampoline = unsafe { &_trampoline as *const usize as usize };
-        let pagetable = PageTable::default();
-        let mut kvm = Kvm { pagetable };
-
-        // QEMU poweroff register, UART, and virtio-blk.
-        kvm.pagetable
-            .map(0x00100000, 0x00100000, PAGESIZE, PTE_R | PTE_W)?;
-        kvm.pagetable.map(UART, UART, PAGESIZE, PTE_R | PTE_W)?;
-        kvm.pagetable
-            .map(0x10001000, 0x10001000, 0x8000, PTE_R | PTE_W)?;
-
-        let end_text = unsafe { &etext } as *const usize as usize;
-        kvm.pagetable.map(
-            KERNEL_START,
-            KERNEL_START,
-            end_text - KERNEL_START,
-            PTE_X | PTE_R,
-        )?;
-        kvm.pagetable
-            .map(end_text, end_text, RAMEND - end_text, PTE_R | PTE_W)?;
-        kvm.pagetable
-            .map(TRAMPOLINE, trampoline, PAGESIZE, PTE_R | PTE_X)?;
-        Ok(kvm)
-    }
-
-    pub fn alloc_kstack(&mut self, va: usize) {
-        for i in 0..crate::process::KERNEL_STACK_PAGES {
-            let kstack_page =
-                FRAME_ALLOCATOR.allocate(PAGE_LAYOUT).unwrap().as_ptr() as *mut u8 as usize;
-            self.pagetable
-                .map(va + i * PAGESIZE, kstack_page, PAGESIZE, PTE_R | PTE_W)
-                .unwrap();
-        }
-    }
-
-    pub fn start_kvm(&self) {
-        let satp: usize = self.pagetable.get_satp().into();
-        unsafe {
-            asm!("sfence.vma zero, zero");
-            write_csr!(satp, satp);
-            asm!("sfence.vma zero, zero");
-        };
     }
 }
