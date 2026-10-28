@@ -1,8 +1,8 @@
 use crate::{
     KERNEL,
+    errno::Errno,
     process::{
         ProcState, Process,
-        fd::Errno,
         trap::trapframe::Trapframe,
     },
     virtmemory::{copy_in, copy_out},

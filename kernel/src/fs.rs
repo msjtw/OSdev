@@ -54,15 +54,14 @@ impl Ext4BlockDevice for VirtioExt4Device {
     }
 }
 
-/// Discover the first VirtIO-MMIO disk and mount it as the read-only root.
 pub fn mount_root() -> Result<(), ()> {
     let disk = block::discover().ok_or(())?;
     let device: Arc<dyn Ext4BlockDevice> = Arc::new(VirtioExt4Device { disk });
     let fs = Arc::new(Ext4::open(device));
 
-    // Force a root-directory read now, while boot diagnostics are available.
     let entries = fs.dir_get_entries(ROOT_INODE);
     log::info!("ext4: mounted root with {} entries", entries.len());
+
     ROOT_FS.call_once(|| fs);
     Ok(())
 }

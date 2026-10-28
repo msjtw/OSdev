@@ -2,7 +2,8 @@ use core::ptr::write_volatile;
 
 use crate::{
     drivers::block,
-    process::{Process, fd::Errno, signals},
+    errno::Errno,
+    process::{Process, signals},
 };
 
 const LINUX_REBOOT_MAGIC1: usize = 0xfee1_dead;

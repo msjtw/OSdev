@@ -1,5 +1,6 @@
 use crate::{
-    process::{Process, fd::Errno},
+    errno::Errno,
+    process::Process,
     virtmemory::{PAGESIZE, PTE_R, PTE_W, PTE_X, VmError},
 };
 

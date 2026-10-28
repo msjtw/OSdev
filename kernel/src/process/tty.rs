@@ -6,11 +6,13 @@ use spin::Once;
 
 use crate::{
     KERNEL,
+    errno::Errno,
     drivers::uart::{UART_DRIVER, UartDriver},
     lock::IntMutex,
     process::{
         ProcState, Process,
-        fd::{Errno, FileOps, POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
+        fd::FileOps,
+        poll::{POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
         signals::{self, SIGINT},
     },
     virtmemory::{copy_in, copy_in_cont, copy_out, copy_out_cont},
@@ -220,7 +222,7 @@ impl FileOps for TTY {
         proc: &mut super::Process,
         addr: usize,
         len: usize,
-    ) -> Result<usize, super::fd::Errno> {
+    ) -> Result<usize, Errno> {
         if len == 0 {
             return Ok(0);
         }
@@ -236,7 +238,7 @@ impl FileOps for TTY {
         proc: &mut super::Process,
         addr: usize,
         len: usize,
-    ) -> Result<usize, super::fd::Errno> {
+    ) -> Result<usize, Errno> {
         let bytes = copy_in_cont(&mut proc.pagetable, addr, len).map_err(|()| Errno::EFAULT)?;
         self.transport.write(&bytes);
         Ok(bytes.len())

@@ -2,82 +2,9 @@ use core::fmt::Debug;
 
 use alloc::{sync::Arc, vec::Vec};
 
-use crate::{KERNEL, process::Process};
+use crate::{errno::Errno, process::Process};
 
-#[derive(Clone, Copy, Debug)]
-pub enum Errno {
-    E2BIG,
-    ENOEXEC,
-    ENAMETOOLONG,
-    EPERM,
-    EINTR,
-    ESRCH,
-    ENXIO,
-    EBADF,
-    EFAULT,
-    EINVAL,
-    ENOTTY,
-    ESPIPE,
-    EPIPE,
-    EMFILE,
-    EAGAIN,
-    ENOENT,
-    ENOTDIR,
-    EISDIR,
-    EROFS,
-    EIO,
-    EOVERFLOW,
-    ECHILD,
-    ENOMEM,
-    ERANGE,
-}
-
-impl Into<usize> for Errno {
-    fn into(self) -> usize {
-        let code = match self {
-            Self::EPERM => 1,
-            Self::ENOENT => 2,
-            Self::EINTR => 4,
-            Self::EIO => 5,
-            Self::ESRCH => 3,
-            Self::ENXIO => 6,
-            Self::E2BIG => 7,
-            Self::ENOEXEC => 8,
-            Self::EBADF => 9, // Bad file descriptor.
-            Self::ECHILD => 10,
-            Self::EAGAIN => 11,
-            Self::ENOMEM => 12,
-            Self::EFAULT => 14, // Bad address.
-            Self::ENOTDIR => 20,
-            Self::EISDIR => 21,
-            Self::EINVAL => 22, // Invalid argument.
-            Self::EMFILE => 24, // Too many open files.
-            Self::ENOTTY => 25, // Inappropriate ioctl for device.
-            Self::ESPIPE => 29,
-            Self::EROFS => 30,
-            Self::EPIPE => 32, // Broken pipe.
-            Self::ERANGE => 34,
-            Self::ENAMETOOLONG => 36,
-            Self::EOVERFLOW => 75,
-        };
-        (-code as isize) as usize
-    }
-}
-
-pub type PollEvents = i16;
-pub const POLLIN: PollEvents = 0x001;
-pub const POLLOUT: PollEvents = 0x004;
-pub const POLLNVAL: PollEvents = 0x020;
-
-static POLL_CHANNEL: u8 = 0;
-
-pub fn poll_channel() -> usize {
-    &POLL_CHANNEL as *const u8 as usize
-}
-
-pub fn wake_poll_waiters() {
-    KERNEL.get().unwrap().lock().wakeup(Some(poll_channel()), true);
-}
+use super::poll::PollEvents;
 
 pub trait FileOps: Send + Sync {
     fn read(&self, proc: &mut Process, addr: usize, len: usize) -> Result<usize, Errno>;
@@ -115,7 +42,6 @@ impl Debug for FileDescriptor {
 
 pub const MAX_FDS: usize = 64;
 pub const FD_CLOEXEC: usize = 1;
-pub const O_CLOEXEC: usize = 0x80000;
 
 #[derive(Clone, Debug)]
 struct FdEntry {
@@ -129,37 +55,6 @@ pub struct FdTable(Vec<Option<FdEntry>>);
 impl FdTable {
     pub fn new() -> Self {
         Self(alloc::vec![])
-    }
-
-    pub fn new_with_tty() -> Self {
-        let tty: Arc<dyn FileOps> = super::tty::TTY::get();
-
-        Self(alloc::vec![
-            Some(FdEntry {
-                descriptor: Arc::new(FileDescriptor {
-                    target: Arc::clone(&tty),
-                    readable: true,
-                    writable: false
-                }),
-                flags: 0
-            }),
-            Some(FdEntry {
-                descriptor: Arc::new(FileDescriptor {
-                    target: Arc::clone(&tty),
-                    readable: false,
-                    writable: true
-                }),
-                flags: 0
-            }),
-            Some(FdEntry {
-                descriptor: Arc::new(FileDescriptor {
-                    target: tty,
-                    readable: false,
-                    writable: true
-                }),
-                flags: 0
-            }),
-        ])
     }
 
     pub fn get(&self, fd: usize) -> Result<Arc<FileDescriptor>, Errno> {
@@ -266,22 +161,14 @@ impl FdTable {
         &mut self,
         oldfd_idx: usize,
         newfd_idx: Option<usize>,
-        flags: Option<usize>,
+        flags: usize,
     ) -> Result<usize, Errno> {
-        if newfd_idx == Some(oldfd_idx) {
-            if flags.is_some() {
-                return Err(Errno::EINVAL);
-            }
-            return Ok(newfd_idx.unwrap());
+        if flags & !FD_CLOEXEC != 0 {
+            return Err(Errno::EINVAL);
         }
-
-        let new_flags = match flags.unwrap_or(0) {
-            0 => 0,
-            O_CLOEXEC if newfd_idx.is_some() => FD_CLOEXEC,
-            _ => {
-                return Err(Errno::EINVAL);
-            }
-        };
+        if newfd_idx == Some(oldfd_idx) {
+            return Err(Errno::EINVAL);
+        }
 
         let Ok(oldfd) = self.get(oldfd_idx) else {
             return Err(Errno::EBADF);
@@ -299,11 +186,11 @@ impl FdTable {
                 // dup3 atomically replaces a distinct occupied destination.
                 self.0[newfd_idx] = Some(FdEntry {
                     descriptor: newfd,
-                    flags: new_flags,
+                    flags,
                 });
                 newfd_idx
             }
-            None => self.push(newfd)?,
+            None => self.push_with_flags(newfd, flags)?,
         };
 
         return Ok(newfd_idx);

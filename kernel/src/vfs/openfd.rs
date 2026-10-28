@@ -1,10 +1,12 @@
 use super::{LinuxDirent64, NodeKind, VfsHandle, VfsRequest, VfsResponse, request};
 
 use crate::{
+    errno::Errno,
     lock::IntMutex,
     process::{
         Process,
-        fd::{Errno, FileOps, PollEvents},
+        fd::FileOps,
+        poll::PollEvents,
     },
     virtmemory::{copy_in_cont, copy_out_cont},
 };

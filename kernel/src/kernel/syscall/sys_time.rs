@@ -1,7 +1,7 @@
 use crate::{
+    errno::Errno,
     process::{
         Process, ProcState,
-        fd::Errno,
         signals,
     },
     read_csr64,

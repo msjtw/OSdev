@@ -2,10 +2,12 @@ use alloc::{boxed::Box, sync::Arc};
 
 use crate::{
     KERNEL,
+    errno::Errno,
     lock::IntMutex,
     process::{
         ProcState, Process,
-        fd::{Errno, FileDescriptor, FileOps, POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
+        fd::{FileDescriptor, FileOps},
+        poll::{POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
         signals,
     },
     structures::RingBuffer,

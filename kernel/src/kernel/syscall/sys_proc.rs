@@ -2,9 +2,9 @@ use alloc::{string::String, vec::Vec};
 
 use crate::{
     KERNEL, log,
+    errno::Errno,
     process::{
         ForkError, Process,
-        fd::Errno,
     },
     vfs::{self, NodeKind, VfsRequest, VfsResponse},
     virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},

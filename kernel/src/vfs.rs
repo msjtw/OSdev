@@ -10,8 +10,9 @@ use spin::Once;
 
 use crate::{
     fs,
+    errno::Errno,
     lock::IntMutex,
-    process::{Process, fd::{Errno, FileOps}},
+    process::{Process, fd::FileOps},
 };
 
 pub use file::{AccessMode, DirectoryEntry, FileMetadata, NodeKind, VfsHandle, VfsNode};

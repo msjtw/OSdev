@@ -4,10 +4,12 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 
 use crate::{
     HEAP_ALLOCATOR,
+    errno::Errno,
     lock::IntMutex,
     process::{
         Process,
-        fd::{Errno, FileOps, POLLIN, PollEvents},
+        fd::FileOps,
+        poll::{POLLIN, PollEvents},
     },
     read_csr64,
     virtmemory::copy_out_cont,

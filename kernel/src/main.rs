@@ -6,6 +6,7 @@
 pub mod allocator;
 mod csr;
 mod drivers;
+pub mod errno;
 mod fs;
 pub mod vfs;
 mod kernel;
@@ -97,7 +98,7 @@ pub extern "C" fn main() -> ! {
         // Start init
         let user_p0 = kernel.allocproc().unwrap();
         unsafe { user_p0.lock.unlock_manual() };
-        user_p0.fds = process::fd::FdTable::new_with_tty();
+        user_p0.fds = process::initial_tty_fds();
         user_p0.sid = user_p0.pid;
         user_p0.pgid = user_p0.pid;
         process::tty::TTY::set_controlling_session(user_p0.sid.unwrap());

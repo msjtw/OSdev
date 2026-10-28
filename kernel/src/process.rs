@@ -13,12 +13,13 @@ use core::{
     ptr,
 };
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
 use crate::{
     FRAME_ALLOCATOR, KERNEL,
     allocator::FrameAllocator,
     csr::{SSTATUS_SPIE, SSTATUS_SPP},
+    errno::Errno,
     lock::IntMutex,
     log,
     process::trap::{
@@ -144,6 +145,26 @@ impl Context {
             s11: 0,
         }
     }
+}
+
+pub fn initial_tty_fds() -> fd::FdTable {
+    let tty: Arc<dyn fd::FileOps> = tty::TTY::get();
+    let mut fds = fd::FdTable::new();
+    fds.push(Arc::new(fd::FileDescriptor {
+        target: Arc::clone(&tty),
+        readable: true,
+        writable: false,
+    }))
+    .expect("initial stdin descriptor must fit");
+    for _ in 0..2 {
+        fds.push(Arc::new(fd::FileDescriptor {
+            target: Arc::clone(&tty),
+            readable: false,
+            writable: true,
+        }))
+        .expect("initial stdout/stderr descriptor must fit");
+    }
+    fds
 }
 
 #[derive(Debug)]
@@ -302,8 +323,7 @@ impl Process {
         Ok(child_pid)
     }
 
-    pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), fd::Errno> {
-        use fd::Errno;
+    pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), Errno> {
         let arg_bytes = argv.iter().try_fold(0usize, |total, arg| {
             total.checked_add(arg.len())?.checked_add(1)
         }).ok_or(Errno::E2BIG)?;
@@ -499,10 +519,10 @@ impl Process {
         panic!("cordyceps")
     }
 
-    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32, Option<u32>)>, fd::Errno> {
+    pub fn kwait(&mut self, nohang: bool) -> Result<Option<(usize, u32, Option<u32>)>, Errno> {
         loop {
             if signals::has_unblocked_pending(self) {
-                return Err(fd::Errno::EINTR);
+                return Err(Errno::EINTR);
             }
             let parent_pid = self.pid;
             let mut has_kids = false;
@@ -550,7 +570,7 @@ impl Process {
             }
 
             if !has_kids {
-                return Err(fd::Errno::ECHILD);
+                return Err(Errno::ECHILD);
             }
 
             if nohang {

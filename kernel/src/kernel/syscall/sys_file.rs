@@ -1,12 +1,14 @@
 use crate::{
-    log, process::{
+    errno::Errno, log, process::{
         Process,
-        fd::{Errno, FileDescriptor, FD_CLOEXEC, O_CLOEXEC},
+        fd::{FileDescriptor, FD_CLOEXEC},
         pipe::new_pipe,
         poll,
     }, vfs, virtmemory::{copy_in, copy_in_str, copy_out, copy_out_cont},
 };
 use alloc::sync::Arc;
+
+const O_CLOEXEC: usize = 0x80000;
 
 pub fn sys_ppoll(proc: &mut Process) {
     let result = poll::ppoll(proc, proc.trapframe.a0, proc.trapframe.a1, proc.trapframe.a2);
@@ -50,7 +52,7 @@ pub fn sys_dup(proc: &mut Process) {
 
     let fds = &mut proc.fds;
 
-    match fds.duplicate(fd_idx, None, None) {
+    match fds.duplicate(fd_idx, None, 0) {
         Ok(dup_idx) => proc.trapframe.a0 = dup_idx,
         Err(error) => proc.trapframe.a0 = error.into(),
     }
@@ -61,11 +63,18 @@ pub fn sys_dup(proc: &mut Process) {
 pub fn sys_dup3(proc: &mut Process) {
     let oldfd_idx = proc.trapframe.a0;
     let newfd_idx = proc.trapframe.a1;
-    let flags = proc.trapframe.a2;
+    let flags = match proc.trapframe.a2 {
+        0 => 0,
+        O_CLOEXEC => FD_CLOEXEC,
+        _ => {
+            proc.trapframe.a0 = Errno::EINVAL.into();
+            return;
+        }
+    };
 
     let fds = &mut proc.fds;
 
-    match fds.duplicate(oldfd_idx, Some(newfd_idx), Some(flags)) {
+    match fds.duplicate(oldfd_idx, Some(newfd_idx), flags) {
         Ok(dup_idx) => proc.trapframe.a0 = dup_idx,
         Err(error) => proc.trapframe.a0 = error.into(),
     }

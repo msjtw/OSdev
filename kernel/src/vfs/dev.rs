@@ -1,9 +1,11 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
+    errno::Errno,
     process::{
         Process,
-        fd::{Errno, FileOps, POLLIN, POLLOUT, PollEvents},
+        fd::FileOps,
+        poll::{POLLIN, POLLOUT, PollEvents},
         tty::TTY,
     },
     virtmemory::{copy_in_cont, copy_out_cont},

@@ -1,7 +1,7 @@
 use crate::{
+    errno::Errno,
     process::{
         Process,
-        fd::Errno,
         signals::{self, SigAction, SigSet},
     },
     virtmemory::{copy_in, copy_out},
