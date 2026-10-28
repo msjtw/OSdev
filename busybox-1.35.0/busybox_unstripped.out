@@ -1,0 +1,1286 @@
+Output of:
+riscv32-unknown-linux-musl-gcc -Wall -Wshadow -Wwrite-strings -Wundef -Wstrict-prototypes -Wunused -Wunused-parameter -Wunused-function -Wunused-value -Wmissing-prototypes -Wmissing-declarations -Wno-format-security -Wdeclaration-after-statement -Wold-style-definition -finline-limit=0 -fno-builtin-strlen -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-guess-branch-probability -funsigned-char -static-libgcc -falign-functions=1 -falign-jumps=1 -falign-labels=1 -falign-loops=1 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-builtin-printf -Os -static -o busybox_unstripped -Wl,--sort-common -Wl,--sort-section,alignment -Wl,--gc-sections -Wl,--start-group applets/built-in.o archival/lib.a archival/libarchive/lib.a console-tools/lib.a coreutils/lib.a coreutils/libcoreutils/lib.a debianutils/lib.a klibc-utils/lib.a e2fsprogs/lib.a editors/lib.a findutils/lib.a init/lib.a libbb/lib.a libpwdgrp/lib.a loginutils/lib.a mailutils/lib.a miscutils/lib.a modutils/lib.a networking/lib.a networking/libiproute/lib.a networking/udhcp/lib.a printutils/lib.a procps/lib.a runit/lib.a selinux/lib.a shell/lib.a sysklogd/lib.a util-linux/lib.a util-linux/volume_id/lib.a archival/built-in.o archival/libarchive/built-in.o console-tools/built-in.o coreutils/built-in.o coreutils/libcoreutils/built-in.o debianutils/built-in.o klibc-utils/built-in.o e2fsprogs/built-in.o editors/built-in.o findutils/built-in.o init/built-in.o libbb/built-in.o libpwdgrp/built-in.o loginutils/built-in.o mailutils/built-in.o miscutils/built-in.o modutils/built-in.o networking/built-in.o networking/libiproute/built-in.o networking/udhcp/built-in.o printutils/built-in.o procps/built-in.o runit/built-in.o selinux/built-in.o shell/built-in.o sysklogd/built-in.o util-linux/built-in.o util-linux/volume_id/built-in.o -Wl,--end-group -Wl,--warn-common -Wl,-Map,busybox_unstripped.map -Wl,--verbose
+==========
+GNU ld (GNU Binutils) 2.47.20260726
+  Supported emulations:
+   elf32lriscv
+   elf32lriscv_ilp32f
+   elf32lriscv_ilp32
+   elf64lriscv
+   elf64lriscv_lp64f
+   elf64lriscv_lp64
+   elf32briscv
+   elf32briscv_ilp32f
+   elf32briscv_ilp32
+   elf64briscv
+   elf64briscv_lp64f
+   elf64briscv_lp64
+using internal linker script:
+==================================================
+/* Script for -z combreloc */
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
+   Copying and distribution of this script, with or without modification,
+   are permitted in any medium without royalty provided the copyright
+   notice and this notice are preserved.  */
+OUTPUT_FORMAT("elf32-littleriscv", "elf32-littleriscv", "elf32-littleriscv")
+OUTPUT_ARCH(riscv)
+ENTRY(_start)
+SEARCH_DIR("=/opt/riscv32_musl/riscv32-unknown-linux-musl/lib32/ilp32d"); SEARCH_DIR("=/opt/riscv32_musl/riscv32-unknown-linux-musl/lib32"); SEARCH_DIR("=/usr/local/lib32/ilp32d"); SEARCH_DIR("=/usr/local/lib32"); SEARCH_DIR("=/lib32/ilp32d"); SEARCH_DIR("=/lib32"); SEARCH_DIR("=/usr/lib32/ilp32d"); SEARCH_DIR("=/usr/lib32"); SEARCH_DIR("=/opt/riscv32_musl/riscv32-unknown-linux-musl/lib"); SEARCH_DIR("=/usr/local/lib"); SEARCH_DIR("=/lib"); SEARCH_DIR("=/usr/lib");
+SECTIONS
+{
+  /* Read-only sections, merged into text segment: */
+  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0x10000));
+  . = SEGMENT_START("text-segment", 0x10000) + SIZEOF_HEADERS;
+  /* Place the build-id as close to the ELF headers as possible.  This
+     maximises the chance the build-id will be present in core files,
+     which GDB can then use to locate the associated debuginfo file.  */
+  .note.gnu.build-id  : { *(.note.gnu.build-id) }
+  .interp         : { *(.interp) }
+  .hash           : { *(.hash) }
+  .gnu.hash       : { *(.gnu.hash) }
+  .dynsym         : { *(.dynsym) }
+  .dynstr         : { *(.dynstr) }
+  .gnu.version    : { *(.gnu.version) }
+  .gnu.version_d  : { *(.gnu.version_d) }
+  .gnu.version_r  : { *(.gnu.version_r) }
+  .rela.dyn       :
+    {
+      *(.rela.init)
+      *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*)
+      *(.rela.fini)
+      *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*)
+      *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*)
+      *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*)
+      *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*)
+      *(.rela.ctors)
+      *(.rela.dtors)
+      *(.rela.got)
+      *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*)
+      *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*)
+      *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*)
+      *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*)
+      *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
+      *(.rela.ifunc)
+    }
+  .rela.plt       :
+    {
+      *(.rela.plt)
+      PROVIDE_HIDDEN (__rela_iplt_start = .);
+      *(.rela.iplt)
+      PROVIDE_HIDDEN (__rela_iplt_end = .);
+    }
+  /* Start of the executable code region.  */
+  .init           :
+  {
+    KEEP (*(SORT_NONE(.init)))
+  }
+  .plt            : { *(.plt) *(.iplt) }
+  .text           :
+  {
+    *(.text.unlikely .text.*_unlikely .text.unlikely.*)
+    *(.text.exit .text.exit.*)
+    *(.text.startup .text.startup.*)
+    *(.text.hot .text.hot.*)
+    *(SORT(.text.sorted.*))
+    *(.text .stub .text.* .gnu.linkonce.t.*)
+    /* .gnu.warning sections are handled specially by elf.em.  */
+    *(.gnu.warning)
+  }
+  .fini           :
+  {
+    KEEP (*(SORT_NONE(.fini)))
+  }
+  PROVIDE (__etext = .);
+  PROVIDE (_etext = .);
+  PROVIDE (etext = .);
+  /* Start of the Read Only Data region.  */
+  .rodata         : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
+  .rodata1        : { *(.rodata1) }
+  .sdata2         :
+  {
+    *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+  }
+  .sbss2          : { *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*) }
+  .eh_frame_hdr   : { *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*) }
+  .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) *(.eh_frame.*) }
+  .sframe         : ONLY_IF_RO { KEEP (*(.sframe)) *(.sframe.*) }
+  .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table .gcc_except_table.*) }
+  .gnu_extab   : ONLY_IF_RO { *(.gnu_extab*) }
+  /* These sections are generated by the Sun/Oracle C++ compiler.  */
+  .exception_ranges   : ONLY_IF_RO { *(.exception_ranges*) }
+  /* Various note sections.  Placed here so that they are always included
+     in the read-only segment and not treated as orphan sections.  The
+     current orphan handling algorithm does place note sections after R/O
+     data, but this is not guaranteed to always be the case.  */
+  .note.build-id :      { *(.note.build-id) }
+  .note.GNU-stack :     { *(.note.GNU-stack) }
+  .note.gnu.property :  { *(.note.gnu.property) }
+  .note.ABI-tag :       { *(.note.ABI-tag) }
+  .note.package :       { *(.note.package) }
+  .note.dlopen :        { *(.note.dlopen) }
+  .note.netbsd.ident :  { *(.note.netbsd.ident) }
+  .note.openbsd.ident : { *(.note.openbsd.ident) }
+  /* Start of the Read Write Data region.  */
+  /* Adjust the address for the data segment.  We want to adjust up to
+     the same address within the page on the next page up.  */
+  . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE));
+  /* Exception handling.  */
+  .eh_frame       : ONLY_IF_RW { KEEP (*(.eh_frame)) *(.eh_frame.*) }
+  .sframe         : ONLY_IF_RW { KEEP (*(.sframe)) *(.sframe.*) }
+  .gnu_extab      : ONLY_IF_RW { *(.gnu_extab) }
+  .gcc_except_table   : ONLY_IF_RW { *(.gcc_except_table .gcc_except_table.*) }
+  .exception_ranges   : ONLY_IF_RW { *(.exception_ranges*) }
+  /* Thread Local Storage sections.  */
+  .tdata	  :
+   {
+     PROVIDE_HIDDEN (__tdata_start = .);
+     *(.tdata .tdata.* .gnu.linkonce.td.*)
+   }
+  .tbss		  : { *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon) }
+  .preinit_array    :
+  {
+    PROVIDE_HIDDEN (__preinit_array_start = .);
+    KEEP (*(.preinit_array))
+    PROVIDE_HIDDEN (__preinit_array_end = .);
+  }
+  .init_array    :
+  {
+    PROVIDE_HIDDEN (__init_array_start = .);
+    KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+    KEEP (*(.init_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
+    PROVIDE_HIDDEN (__init_array_end = .);
+  }
+  .fini_array    :
+  {
+    PROVIDE_HIDDEN (__fini_array_start = .);
+    KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
+    KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
+    PROVIDE_HIDDEN (__fini_array_end = .);
+  }
+  .ctors          :
+  {
+    /* gcc uses crtbegin.o to find the start of
+       the constructors, so we make sure it is
+       first.  Because this is a wildcard, it
+       doesn't matter if the user does not
+       actually link against crtbegin.o; the
+       linker won't look for a file to match a
+       wildcard.  The wildcard also means that it
+       doesn't matter which directory crtbegin.o
+       is in.  */
+    KEEP (*crtbegin.o(.ctors))
+    KEEP (*crtbegin?.o(.ctors))
+    /* We don't want to include the .ctor section from
+       the crtend.o file until after the sorted ctors.
+       The .ctor section from the crtend file contains the
+       end of ctors marker and it must be last */
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
+    KEEP (*(SORT(.ctors.*)))
+    KEEP (*(.ctors))
+  }
+  .dtors          :
+  {
+    KEEP (*crtbegin.o(.dtors))
+    KEEP (*crtbegin?.o(.dtors))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
+    KEEP (*(SORT(.dtors.*)))
+    KEEP (*(.dtors))
+  }
+  .jcr            : { KEEP (*(.jcr)) }
+  .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }
+  .dynamic        : { *(.dynamic) }
+  .got            : { *(.got) *(.igot) }
+  . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 8 ? 8 : 0, .);
+  .got.plt        : { *(.got.plt) *(.igot.plt) }
+  .data           :
+  {
+    __DATA_BEGIN__ = .;
+    *(.data .data.* .gnu.linkonce.d.*)
+    SORT(CONSTRUCTORS)
+  }
+  .data1          : { *(.data1) }
+  /* We want the small data sections together, so single-instruction offsets
+     can access them all, and initialized data all before uninitialized, so
+     we can shorten the on-disk segment size.  */
+  .sdata          :
+  {
+    __SDATA_BEGIN__ = .;
+    *(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata .srodata.*)
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
+  }
+  _edata = .;
+  PROVIDE (edata = .);
+  . = ALIGN(ALIGNOF(NEXT_SECTION));
+  __bss_start = .;
+  .sbss           :
+  {
+    *(.dynsbss)
+    *(.sbss .sbss.* .gnu.linkonce.sb.*)
+    *(.scommon)
+  }
+  .bss            :
+  {
+    *(.dynbss)
+    *(.bss .bss.* .gnu.linkonce.b.*)
+    *(COMMON)
+    /* Align here to ensure that in the common case of there only being one
+       type of .bss section, the section occupies space up to _end.
+       Align after .bss to ensure correct alignment even if the
+       .bss section disappears because there are no input sections.
+       FIXME: Why do we need it? When there is no .bss section, we do not
+       pad the .data section.  */
+      . = ALIGN(. != 0 ? 32 / 8 : 1);
+  }
+    . = ALIGN(32 / 8);
+  /* Start of the Large Data region.  */
+  . = SEGMENT_START("ldata-segment", .);
+  . = ALIGN(32 / 8);
+  __BSS_END__ = .;
+    __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
+		            MAX(__DATA_BEGIN__ + 0x800, __BSS_END__ - 0x800));
+  _end = .;
+  PROVIDE (end = .);
+  . = DATA_SEGMENT_END (.);
+  /* Start of the Tiny Data region.  */
+  /* Stabs debugging sections.  */
+  .stab          0 : { *(.stab) }
+  .stabstr       0 : { *(.stabstr) }
+  .stab.excl     0 : { *(.stab.excl) }
+  .stab.exclstr  0 : { *(.stab.exclstr) }
+  .stab.index    0 : { *(.stab.index) }
+  .stab.indexstr 0 : { *(.stab.indexstr) }
+  .comment 0 (INFO) : { *(.comment); LINKER_VERSION; }
+  .gnu.build.attributes : { *(.gnu.build.attributes .gnu.build.attributes.*) }
+  /* DWARF debug sections.
+     Symbols in the DWARF debugging sections are relative to the beginning
+     of the section so we begin them at 0.  */
+  /* DWARF 1.  */
+  .debug          0 : { *(.debug) }
+  .line           0 : { *(.line) }
+  /* GNU DWARF 1 extensions.  */
+  .debug_srcinfo  0 : { *(.debug_srcinfo) }
+  .debug_sfnames  0 : { *(.debug_sfnames) }
+  /* DWARF 1.1 and DWARF 2.  */
+  .debug_aranges  0 : { *(.debug_aranges) }
+  .debug_pubnames 0 : { *(.debug_pubnames) }
+  /* DWARF 2.  */
+  .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+  .debug_abbrev   0 : { *(.debug_abbrev) }
+  .debug_line     0 : { *(.debug_line .debug_line.* .debug_line_end) }
+  .debug_frame    0 : { *(.debug_frame) }
+  .debug_str      0 : { *(.debug_str) }
+  .debug_loc      0 : { *(.debug_loc) }
+  .debug_macinfo  0 : { *(.debug_macinfo) }
+  /* SGI/MIPS DWARF 2 extensions.  */
+  .debug_weaknames 0 : { *(.debug_weaknames) }
+  .debug_funcnames 0 : { *(.debug_funcnames) }
+  .debug_typenames 0 : { *(.debug_typenames) }
+  .debug_varnames  0 : { *(.debug_varnames) }
+  /* DWARF 3.  */
+  .debug_pubtypes 0 : { *(.debug_pubtypes) }
+  .debug_ranges   0 : { *(.debug_ranges) }
+  /* DWARF 5.  */
+  .debug_addr     0 : { *(.debug_addr) }
+  .debug_line_str 0 : { *(.debug_line_str) }
+  .debug_loclists 0 : { *(.debug_loclists) }
+  .debug_macro    0 : { *(.debug_macro) }
+  .debug_names    0 : { *(.debug_names) }
+  .debug_rnglists 0 : { *(.debug_rnglists) }
+  .debug_str_offsets 0 : { *(.debug_str_offsets) }
+  .debug_sup      0 : { *(.debug_sup) }
+  .gnu.attributes 0 : { KEEP (*(.gnu.attributes)) }
+  /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) *(.gnu_object_only) }
+}
+
+
+==================================================
+/opt/riscv32_musl/riscv32-unknown-linux-musl/bin/ld: mode elf32lriscv
+attempt to open /opt/riscv32_musl/sysroot/lib/crt1.o succeeded
+/opt/riscv32_musl/sysroot/lib/crt1.o
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crti.o succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crti.o
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtbeginT.o succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtbeginT.o
+attempt to open applets/built-in.o succeeded
+applets/built-in.o
+attempt to open archival/lib.a succeeded
+archival/lib.a
+attempt to open archival/libarchive/lib.a succeeded
+archival/libarchive/lib.a
+attempt to open console-tools/lib.a succeeded
+console-tools/lib.a
+attempt to open coreutils/lib.a succeeded
+coreutils/lib.a
+attempt to open coreutils/libcoreutils/lib.a succeeded
+coreutils/libcoreutils/lib.a
+attempt to open debianutils/lib.a succeeded
+debianutils/lib.a
+attempt to open klibc-utils/lib.a succeeded
+klibc-utils/lib.a
+attempt to open e2fsprogs/lib.a succeeded
+e2fsprogs/lib.a
+attempt to open editors/lib.a succeeded
+editors/lib.a
+attempt to open findutils/lib.a succeeded
+findutils/lib.a
+attempt to open init/lib.a succeeded
+init/lib.a
+attempt to open libbb/lib.a succeeded
+libbb/lib.a
+(libbb/lib.a)appletlib.o
+(libbb/lib.a)compare_string_array.o
+(libbb/lib.a)concat_path_file.o
+(libbb/lib.a)default_error_retval.o
+(libbb/lib.a)get_last_path_component.o
+(libbb/lib.a)last_char_is.o
+(libbb/lib.a)messages.o
+(libbb/lib.a)perror_msg.o
+(libbb/lib.a)ptr_to_globals.o
+(libbb/lib.a)verror_msg.o
+(libbb/lib.a)xfunc_die.o
+(libbb/lib.a)xfuncs.o
+(libbb/lib.a)xfuncs_printf.o
+(libbb/lib.a)xreadlink.o
+(libbb/lib.a)copyfd.o
+(libbb/lib.a)full_write.o
+(libbb/lib.a)read.o
+(libbb/lib.a)safe_write.o
+(libbb/lib.a)signals.o
+(libbb/lib.a)time.o
+(libbb/lib.a)xgetcwd.o
+(libbb/lib.a)bb_strtonum.o
+attempt to open libpwdgrp/lib.a succeeded
+libpwdgrp/lib.a
+attempt to open loginutils/lib.a succeeded
+loginutils/lib.a
+(loginutils/lib.a)adduser.o
+(loginutils/lib.a)getty.o
+(loginutils/lib.a)login.o
+(loginutils/lib.a)passwd.o
+attempt to open mailutils/lib.a succeeded
+mailutils/lib.a
+attempt to open miscutils/lib.a succeeded
+miscutils/lib.a
+(miscutils/lib.a)ascii.o
+(miscutils/lib.a)bc.o
+(miscutils/lib.a)hexedit.o
+(miscutils/lib.a)i2c_tools.o
+(miscutils/lib.a)lsscsi.o
+(miscutils/lib.a)partprobe.o
+(miscutils/lib.a)setfattr.o
+(miscutils/lib.a)setserial.o
+(miscutils/lib.a)ts.o
+attempt to open modutils/lib.a succeeded
+modutils/lib.a
+attempt to open networking/lib.a succeeded
+networking/lib.a
+(networking/lib.a)hostname.o
+(networking/lib.a)ifconfig.o
+(networking/lib.a)ifupdown.o
+(networking/lib.a)interface.o
+(networking/lib.a)ip.o
+(networking/lib.a)nc.o
+(networking/lib.a)netstat.o
+(networking/lib.a)ping.o
+(networking/lib.a)route.o
+(networking/lib.a)telnet.o
+(networking/lib.a)wget.o
+(networking/lib.a)parse_pasv_epsv.o
+attempt to open networking/libiproute/lib.a succeeded
+networking/libiproute/lib.a
+(networking/libiproute/lib.a)ip_parse_common_args.o
+(networking/libiproute/lib.a)ipaddress.o
+(networking/libiproute/lib.a)iplink.o
+(networking/libiproute/lib.a)iproute.o
+(networking/libiproute/lib.a)libnetlink.o
+(networking/libiproute/lib.a)ll_addr.o
+(networking/libiproute/lib.a)ll_map.o
+(networking/libiproute/lib.a)ll_types.o
+(networking/libiproute/lib.a)rt_names.o
+(networking/libiproute/lib.a)rtm_map.o
+(networking/libiproute/lib.a)utils.o
+attempt to open networking/udhcp/lib.a succeeded
+networking/udhcp/lib.a
+(networking/udhcp/lib.a)dhcpc.o
+(networking/udhcp/lib.a)packet.o
+(networking/udhcp/lib.a)signalpipe.o
+(networking/udhcp/lib.a)socket.o
+(networking/udhcp/lib.a)common.o
+attempt to open printutils/lib.a succeeded
+printutils/lib.a
+attempt to open procps/lib.a succeeded
+procps/lib.a
+(procps/lib.a)kill.o
+(procps/lib.a)ps.o
+attempt to open runit/lib.a succeeded
+runit/lib.a
+(runit/lib.a)sv.o
+attempt to open selinux/lib.a succeeded
+selinux/lib.a
+attempt to open shell/lib.a succeeded
+shell/lib.a
+(shell/lib.a)ash.o
+(shell/lib.a)ash_ptr_hack.o
+(shell/lib.a)math.o
+(shell/lib.a)random.o
+(shell/lib.a)shell_common.o
+attempt to open sysklogd/lib.a succeeded
+sysklogd/lib.a
+attempt to open util-linux/lib.a succeeded
+util-linux/lib.a
+(util-linux/lib.a)dmesg.o
+(util-linux/lib.a)fallocate.o
+(util-linux/lib.a)freeramdisk.o
+(util-linux/lib.a)fsfreeze.o
+(util-linux/lib.a)getopt.o
+(util-linux/lib.a)hexdump_xxd.o
+(util-linux/lib.a)mesg.o
+(util-linux/lib.a)mkfs_ext2.o
+(util-linux/lib.a)mkfs_vfat.o
+(util-linux/lib.a)more.o
+(util-linux/lib.a)mount.o
+(util-linux/lib.a)setarch.o
+(util-linux/lib.a)setpriv.o
+(util-linux/lib.a)swaponoff.o
+(util-linux/lib.a)switch_root.o
+(util-linux/lib.a)umount.o
+attempt to open util-linux/volume_id/lib.a succeeded
+util-linux/volume_id/lib.a
+(util-linux/volume_id/lib.a)get_devname.o
+(util-linux/volume_id/lib.a)volume_id.o
+(util-linux/volume_id/lib.a)erofs.o
+(util-linux/volume_id/lib.a)minix.o
+(util-linux/volume_id/lib.a)util.o
+attempt to open archival/built-in.o succeeded
+archival/built-in.o
+attempt to open archival/libarchive/built-in.o succeeded
+archival/libarchive/built-in.o
+attempt to open console-tools/built-in.o succeeded
+console-tools/built-in.o
+attempt to open coreutils/built-in.o succeeded
+coreutils/built-in.o
+attempt to open coreutils/libcoreutils/built-in.o succeeded
+coreutils/libcoreutils/built-in.o
+attempt to open debianutils/built-in.o succeeded
+debianutils/built-in.o
+attempt to open klibc-utils/built-in.o succeeded
+klibc-utils/built-in.o
+attempt to open e2fsprogs/built-in.o succeeded
+e2fsprogs/built-in.o
+attempt to open editors/built-in.o succeeded
+editors/built-in.o
+attempt to open findutils/built-in.o succeeded
+findutils/built-in.o
+attempt to open init/built-in.o succeeded
+init/built-in.o
+attempt to open libbb/built-in.o succeeded
+libbb/built-in.o
+attempt to open libpwdgrp/built-in.o succeeded
+libpwdgrp/built-in.o
+attempt to open loginutils/built-in.o succeeded
+loginutils/built-in.o
+attempt to open mailutils/built-in.o succeeded
+mailutils/built-in.o
+attempt to open miscutils/built-in.o succeeded
+miscutils/built-in.o
+attempt to open modutils/built-in.o succeeded
+modutils/built-in.o
+attempt to open networking/built-in.o succeeded
+networking/built-in.o
+attempt to open networking/libiproute/built-in.o succeeded
+networking/libiproute/built-in.o
+attempt to open networking/udhcp/built-in.o succeeded
+networking/udhcp/built-in.o
+attempt to open printutils/built-in.o succeeded
+printutils/built-in.o
+attempt to open procps/built-in.o succeeded
+procps/built-in.o
+attempt to open runit/built-in.o succeeded
+runit/built-in.o
+attempt to open selinux/built-in.o succeeded
+selinux/built-in.o
+attempt to open shell/built-in.o succeeded
+shell/built-in.o
+attempt to open sysklogd/built-in.o succeeded
+sysklogd/built-in.o
+attempt to open util-linux/built-in.o succeeded
+util-linux/built-in.o
+attempt to open util-linux/volume_id/built-in.o succeeded
+util-linux/volume_id/built-in.o
+archival/lib.a
+(archival/lib.a)bbunzip.o
+(archival/lib.a)lzop.o
+archival/libarchive/lib.a
+(archival/libarchive/lib.a)decompress_bunzip2.o
+(archival/libarchive/lib.a)decompress_gunzip.o
+(archival/libarchive/lib.a)decompress_unlzma.o
+(archival/libarchive/lib.a)decompress_unxz.o
+(archival/libarchive/lib.a)lzo1x_1.o
+(archival/libarchive/lib.a)lzo1x_1o.o
+(archival/libarchive/lib.a)lzo1x_d.o
+(archival/libarchive/lib.a)open_transformer.o
+console-tools/lib.a
+coreutils/lib.a
+(coreutils/lib.a)basename.o
+(coreutils/lib.a)cat.o
+(coreutils/lib.a)chgrp.o
+(coreutils/lib.a)chmod.o
+(coreutils/lib.a)chown.o
+(coreutils/lib.a)chroot.o
+(coreutils/lib.a)cksum.o
+(coreutils/lib.a)cp.o
+(coreutils/lib.a)cut.o
+(coreutils/lib.a)date.o
+(coreutils/lib.a)dd.o
+(coreutils/lib.a)df.o
+(coreutils/lib.a)dirname.o
+(coreutils/lib.a)dos2unix.o
+(coreutils/lib.a)du.o
+(coreutils/lib.a)echo.o
+(coreutils/lib.a)env.o
+(coreutils/lib.a)expr.o
+(coreutils/lib.a)factor.o
+(coreutils/lib.a)false.o
+(coreutils/lib.a)fold.o
+(coreutils/lib.a)head.o
+(coreutils/lib.a)hostid.o
+(coreutils/lib.a)id.o
+(coreutils/lib.a)install.o
+(coreutils/lib.a)link.o
+(coreutils/lib.a)ln.o
+(coreutils/lib.a)logname.o
+(coreutils/lib.a)ls.o
+(coreutils/lib.a)md5_sha1_sum.o
+(coreutils/lib.a)mkdir.o
+(coreutils/lib.a)mkfifo.o
+(coreutils/lib.a)mknod.o
+(coreutils/lib.a)mv.o
+(coreutils/lib.a)nice.o
+(coreutils/lib.a)nl.o
+(coreutils/lib.a)nohup.o
+(coreutils/lib.a)nproc.o
+(coreutils/lib.a)od.o
+(coreutils/lib.a)paste.o
+(coreutils/lib.a)printenv.o
+(coreutils/lib.a)printf.o
+(coreutils/lib.a)pwd.o
+(coreutils/lib.a)readlink.o
+(coreutils/lib.a)realpath.o
+(coreutils/lib.a)rm.o
+(coreutils/lib.a)rmdir.o
+(coreutils/lib.a)seq.o
+(coreutils/lib.a)shred.o
+(coreutils/lib.a)sleep.o
+(coreutils/lib.a)sort.o
+(coreutils/lib.a)stty.o
+(coreutils/lib.a)sync.o
+(coreutils/lib.a)tail.o
+(coreutils/lib.a)tee.o
+(coreutils/lib.a)test.o
+(coreutils/lib.a)test_ptr_hack.o
+(coreutils/lib.a)touch.o
+(coreutils/lib.a)tr.o
+(coreutils/lib.a)true.o
+(coreutils/lib.a)truncate.o
+(coreutils/lib.a)tty.o
+(coreutils/lib.a)uname.o
+(coreutils/lib.a)uniq.o
+(coreutils/lib.a)unlink.o
+(coreutils/lib.a)usleep.o
+(coreutils/lib.a)uudecode.o
+(coreutils/lib.a)uuencode.o
+(coreutils/lib.a)wc.o
+(coreutils/lib.a)who.o
+(coreutils/lib.a)whoami.o
+(coreutils/lib.a)yes.o
+coreutils/libcoreutils/lib.a
+(coreutils/libcoreutils/lib.a)cp_mv_stat.o
+(coreutils/libcoreutils/lib.a)getopt_mk_fifo_nod.o
+debianutils/lib.a
+(debianutils/lib.a)run_parts.o
+(debianutils/lib.a)start_stop_daemon.o
+(debianutils/lib.a)which.o
+klibc-utils/lib.a
+(klibc-utils/lib.a)nuke.o
+(klibc-utils/lib.a)resume.o
+e2fsprogs/lib.a
+editors/lib.a
+(editors/lib.a)sed.o
+findutils/lib.a
+(findutils/lib.a)grep.o
+(findutils/lib.a)xargs.o
+init/lib.a
+(init/lib.a)halt.o
+(init/lib.a)init.o
+libbb/lib.a
+(libbb/lib.a)ask_confirmation.o
+(libbb/lib.a)auto_string.o
+(libbb/lib.a)bb_askpass.o
+(libbb/lib.a)bb_bswap_64.o
+(libbb/lib.a)bb_cat.o
+(libbb/lib.a)bb_do_delay.o
+(libbb/lib.a)bb_getgroups.o
+(libbb/lib.a)bb_getsockname.o
+(libbb/lib.a)bb_pwd.o
+(libbb/lib.a)capability.o
+(libbb/lib.a)change_identity.o
+(libbb/lib.a)chomp.o
+(libbb/lib.a)common_bufsiz.o
+(libbb/lib.a)concat_subpath_file.o
+(libbb/lib.a)copy_file.o
+(libbb/lib.a)correct_password.o
+(libbb/lib.a)crc32.o
+(libbb/lib.a)device_open.o
+(libbb/lib.a)dump.o
+(libbb/lib.a)duration.o
+(libbb/lib.a)endofname.o
+(libbb/lib.a)executable.o
+(libbb/lib.a)fclose_nonstdin.o
+(libbb/lib.a)fflush_stdout_and_exit.o
+(libbb/lib.a)fgets_str.o
+(libbb/lib.a)find_mount_point.o
+(libbb/lib.a)find_pid_by_name.o
+(libbb/lib.a)get_line_from_file.o
+(libbb/lib.a)get_shell_name.o
+(libbb/lib.a)get_volsize.o
+(libbb/lib.a)getopt32.o
+(libbb/lib.a)getopt_allopts.o
+(libbb/lib.a)hash_md5_sha.o
+(libbb/lib.a)human_readable.o
+(libbb/lib.a)in_ether.o
+(libbb/lib.a)inet_cksum.o
+(libbb/lib.a)inet_common.o
+(libbb/lib.a)inode_hash.o
+(libbb/lib.a)isdirectory.o
+(libbb/lib.a)isqrt.o
+(libbb/lib.a)iterate_on_dir.o
+(libbb/lib.a)lineedit.o
+(libbb/lib.a)lineedit_ptr_hack.o
+(libbb/lib.a)llist.o
+(libbb/lib.a)login.o
+(libbb/lib.a)loop.o
+(libbb/lib.a)make_directory.o
+(libbb/lib.a)match_fstype.o
+(libbb/lib.a)mode_string.o
+(libbb/lib.a)nuke_str.o
+(libbb/lib.a)obscure.o
+(libbb/lib.a)parse_config.o
+(libbb/lib.a)parse_mode.o
+(libbb/lib.a)percent_decode.o
+(libbb/lib.a)perror_nomsg_and_die.o
+(libbb/lib.a)pidfile.o
+(libbb/lib.a)print_flags.o
+(libbb/lib.a)print_numbered_lines.o
+(libbb/lib.a)printable.o
+(libbb/lib.a)printable_string.o
+(libbb/lib.a)process_escape_sequence.o
+(libbb/lib.a)procps.o
+(libbb/lib.a)pw_encrypt.o
+(libbb/lib.a)read_key.o
+(libbb/lib.a)read_printf.o
+(libbb/lib.a)recursive_action.o
+(libbb/lib.a)remove_file.o
+(libbb/lib.a)replace.o
+(libbb/lib.a)run_shell.o
+(libbb/lib.a)safe_gethostname.o
+(libbb/lib.a)safe_poll.o
+(libbb/lib.a)safe_strncpy.o
+(libbb/lib.a)securetty.o
+(libbb/lib.a)setup_environment.o
+(libbb/lib.a)simplify_path.o
+(libbb/lib.a)single_argv.o
+(libbb/lib.a)skip_whitespace.o
+(libbb/lib.a)speed_table.o
+(libbb/lib.a)str_tolower.o
+(libbb/lib.a)sysconf.o
+(libbb/lib.a)trim.o
+(libbb/lib.a)u_signal_names.o
+(libbb/lib.a)update_passwd.o
+(libbb/lib.a)utmp.o
+(libbb/lib.a)uuencode.o
+(libbb/lib.a)vfork_daemon_rexec.o
+(libbb/lib.a)wfopen.o
+(libbb/lib.a)wfopen_input.o
+(libbb/lib.a)xatonum.o
+(libbb/lib.a)xconnect.o
+(libbb/lib.a)xgethostbyname.o
+(libbb/lib.a)xrealloc_vector.o
+(libbb/lib.a)xregcomp.o
+(libbb/lib.a)bb_qsort.o
+(libbb/lib.a)herror_msg.o
+(libbb/lib.a)perror_nomsg.o
+libpwdgrp/lib.a
+(libpwdgrp/lib.a)uidgid_get.o
+loginutils/lib.a
+mailutils/lib.a
+miscutils/lib.a
+modutils/lib.a
+networking/lib.a
+networking/libiproute/lib.a
+networking/udhcp/lib.a
+printutils/lib.a
+procps/lib.a
+runit/lib.a
+selinux/lib.a
+shell/lib.a
+sysklogd/lib.a
+util-linux/lib.a
+util-linux/volume_id/lib.a
+archival/built-in.o
+archival/libarchive/built-in.o
+console-tools/built-in.o
+coreutils/built-in.o
+coreutils/libcoreutils/built-in.o
+debianutils/built-in.o
+klibc-utils/built-in.o
+e2fsprogs/built-in.o
+editors/built-in.o
+findutils/built-in.o
+init/built-in.o
+libbb/built-in.o
+libpwdgrp/built-in.o
+loginutils/built-in.o
+mailutils/built-in.o
+miscutils/built-in.o
+modutils/built-in.o
+networking/built-in.o
+networking/libiproute/built-in.o
+networking/udhcp/built-in.o
+printutils/built-in.o
+procps/built-in.o
+runit/built-in.o
+selinux/built-in.o
+shell/built-in.o
+sysklogd/built-in.o
+util-linux/built-in.o
+util-linux/volume_id/built-in.o
+archival/lib.a
+archival/libarchive/lib.a
+console-tools/lib.a
+coreutils/lib.a
+coreutils/libcoreutils/lib.a
+debianutils/lib.a
+klibc-utils/lib.a
+e2fsprogs/lib.a
+editors/lib.a
+findutils/lib.a
+init/lib.a
+libbb/lib.a
+libpwdgrp/lib.a
+loginutils/lib.a
+mailutils/lib.a
+miscutils/lib.a
+modutils/lib.a
+networking/lib.a
+networking/libiproute/lib.a
+networking/udhcp/lib.a
+printutils/lib.a
+procps/lib.a
+runit/lib.a
+selinux/lib.a
+shell/lib.a
+sysklogd/lib.a
+util-linux/lib.a
+util-linux/volume_id/lib.a
+archival/built-in.o
+archival/libarchive/built-in.o
+console-tools/built-in.o
+coreutils/built-in.o
+coreutils/libcoreutils/built-in.o
+debianutils/built-in.o
+klibc-utils/built-in.o
+e2fsprogs/built-in.o
+editors/built-in.o
+findutils/built-in.o
+init/built-in.o
+libbb/built-in.o
+libpwdgrp/built-in.o
+loginutils/built-in.o
+mailutils/built-in.o
+miscutils/built-in.o
+modutils/built-in.o
+networking/built-in.o
+networking/libiproute/built-in.o
+networking/udhcp/built-in.o
+printutils/built-in.o
+procps/built-in.o
+runit/built-in.o
+selinux/built-in.o
+shell/built-in.o
+sysklogd/built-in.o
+util-linux/built-in.o
+util-linux/volume_id/built-in.o
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_lshrdi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_ashldi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_ashrdi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_bswapsi2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_bswapdi2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_fixdfdi.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_fixunsdfdi.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_floatdidf.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_divdi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_moddi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_udivdi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_umoddi3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_clz.o
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc_eh.a succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc_eh.a
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libatomic_asneeded.a failed
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/../../../../riscv32-unknown-linux-musl/lib/libatomic_asneeded.a succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/../../../../riscv32-unknown-linux-musl/lib/libatomic_asneeded.a
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libc.a failed
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/../../../../riscv32-unknown-linux-musl/lib/libc.a failed
+attempt to open /opt/riscv32_musl/sysroot/lib/libc.a succeeded
+/opt/riscv32_musl/sysroot/lib/libc.a
+(/opt/riscv32_musl/sysroot/lib/libc.a)sysconf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)closedir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)opendir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)readdir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__environ.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__libc_start_main.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)clearenv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getenv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)putenv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setenv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)unsetenv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__errno_location.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strerror.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)exit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fcntl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)open.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)posix_fallocate.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)defsysinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)libc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)syscall_ret.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpagesize.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)utmpx.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)cap.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)chroot.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)klogctl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mount.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)personality.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)prctl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)reboot.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sendfile.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setgroups.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sethostname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)settimeofday.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)swap.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sysinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)utimes.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)xattr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__lctrans.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)calloc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)free.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lite_malloc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)free.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)malloc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)realloc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)replaced.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dirname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getauxval.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gethostid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getopt.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getopt_long.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpriority.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getresgid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getresuid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getrlimit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)initgroups.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ioctl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mntent.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)realpath.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setpriority.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setrlimit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)syslog.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)uname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mmap.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mprotect.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)munmap.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mblen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mbtowc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)accept.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)bind.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)connect.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)freeaddrinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getaddrinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gethostbyname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gethostbyname2.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gethostbyname2_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getnameinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpeername.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getservbyname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getservbyname_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getservbyport.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getservbyport_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getsockname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)h_errno.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)hstrerror.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)htons.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)if_indextoname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)if_nametoindex.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)inet_aton.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)inet_ntoa.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)inet_ntop.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)inet_pton.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)listen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lookup_ipliteral.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lookup_name.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lookup_serv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ntohs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)recv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)recvfrom.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)recvmsg.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)res_mkquery.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)res_msend.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)res_send.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)resolvconf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)send.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sendmsg.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sendto.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setsockopt.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)shutdown.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)socket.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgrent.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgrent_a.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgrouplist.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpwent.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpwent_a.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getspnam_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)nscd_query.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)rand.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)execle.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)execlp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)execv.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)execve.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)execvp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fork.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vfork.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)wait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)waitpid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fnmatch.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)regcomp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)regerror.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)regexec.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tre-mem.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)affinity.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)poll.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)longjmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setjmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)block.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)kill.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)raise.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigaction.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigaddset.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigdelset.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigemptyset.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigfillset.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)signal.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigprocmask.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigrtmax.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigrtmin.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigsuspend.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sigtimedwait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)chmod.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fchmod.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fstat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fstatat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)futimens.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)futimesat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lstat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mkdir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mkfifo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mknod.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)statvfs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)umask.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)utimensat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__fclose_ca.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__fdopen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__fopen_rb_ca.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__lockfile.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdio_close.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdio_read.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdio_seek.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdio_write.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)clearerr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fclose.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)feof.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ferror.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fflush.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fgets.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fileno.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fopen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fputs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fread.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)freopen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fscanf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fseek.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ftell.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fwrite.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getc_unlocked.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getchar_unlocked.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getline.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ofl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ofl_add.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)printf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)putc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)putc_unlocked.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)putchar_unlocked.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)puts.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)rename.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setbuf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setvbuf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)snprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sscanf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stderr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stdin.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stdout.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ungetc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vasprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vdprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vfprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vfscanf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vsnprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vsprintf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vsscanf.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)atof.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)atoi.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)bsearch.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)qsort_nr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strtod.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strtol.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memchr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memcmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memcpy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memmove.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memset.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stpcpy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)stpncpy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcasecmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcasestr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcat.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strchr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strchrnul.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcpy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strcspn.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strdup.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strlen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strncasecmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strncmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strncpy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strndup.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strnlen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strpbrk.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strrchr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strsep.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strsignal.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strspn.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strstr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strtok_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strverscmp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mkstemp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)cfgetospeed.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)cfmakeraw.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)cfsetospeed.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)cfsetspeed.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcdrain.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcflush.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcgetattr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcgetsid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcsetattr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__lock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__syscall_cp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lock_ptc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_cleanup_push.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_rdlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_timedrdlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_tryrdlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_unlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_wrlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_setcancelstate.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_sigmask.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)synccall.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__tz.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__utc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__year_to_secs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)clock_gettime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)clock_settime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ctime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gettimeofday.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)gmtime_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)localtime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)localtime_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mktime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)nanosleep.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strftime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)strptime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)time.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)times.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)_exit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)access.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)alarm.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)chdir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)chown.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)close.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dup.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dup2.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dup3.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fchdir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fchown.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fdatasync.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fsync.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ftruncate.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getcwd.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getegid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)geteuid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgroups.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getlogin_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getppid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getsid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getuid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)isatty.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lchown.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)link.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)lseek.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pipe.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)read.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)readlink.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)rmdir.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setegid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)seteuid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setgid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setsid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setuid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setxid.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sleep.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)symlink.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sync.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tcsetpgrp.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)ttyname_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)unlink.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)usleep.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)write.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)isalnum.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswalnum.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswalpha.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswctype.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswgraph.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswlower.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswprint.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswpunct.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswspace.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswupper.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswxdigit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)tolower.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)towctrans.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__init_tls.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)_Exit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)abort_lock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)emulate_wait4.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)floatscan.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)intscan.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)procfdname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)shgetc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)vdso.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)c_locale.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)langinfo.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)realloc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__fpclassifyl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__signbitl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)copysignl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fabsl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)fmodl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)frexpl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)scalbn.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)scalbnl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mremap.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)internal.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mbrtowc.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mbsinit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mbstowcs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)wctomb.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dn_expand.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)dns_parse.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getgr_a.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getpw_a.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)_Fork.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)restore.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)setitimer.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__fmodeflags.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__overflow.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdout_write.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__toread.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__towrite.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__uflow.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getdelim.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)qsort.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)memrchr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)wcschr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)wcslen.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mkostemps.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__timedwait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)default_attr.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_timedwrlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_rwlock_trywrlock.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__set_thread_area.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_destroy.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_init.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_post.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_wait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__map_file.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__month_to_secs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__secs_to_tm.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__tm_to_secs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)asctime.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)asctime_r.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)clock_nanosleep.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)getlogin.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswblank.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)iswcntrl.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)mbsrtowcs.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)wcrtomb.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__stdio_exit.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)__randname.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_timedwait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)sem_trywait.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)isblank.o
+(/opt/riscv32_musl/sysroot/lib/libc.a)pthread_testcancel.o
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)addtf3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)divtf3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)eqtf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)getf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)letf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)multf3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)subtf3.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)fixtfsi.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)fixunstfsi.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)floatsitf.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)floatunsitf.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)extendsftf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)extenddftf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)trunctfsf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)trunctfdf2.o
+(/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a)_clzsi2.o
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc_eh.a
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/../../../../riscv32-unknown-linux-musl/lib/libatomic_asneeded.a
+/opt/riscv32_musl/sysroot/lib/libc.a
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc.a
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/libgcc_eh.a
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/../../../../riscv32-unknown-linux-musl/lib/libatomic_asneeded.a
+/opt/riscv32_musl/sysroot/lib/libc.a
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtend.o succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtend.o
+attempt to open /opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtn.o succeeded
+/opt/riscv32_musl/lib/gcc/riscv32-unknown-linux-musl/16.1.0/crtn.o

@@ -1,0 +1,1 @@
+cmd_networking/lib.a := rm -f networking/lib.a; riscv32-unknown-linux-musl-ar  rcs networking/lib.a networking/hostname.o networking/ifconfig.o networking/ifupdown.o networking/interface.o networking/ip.o networking/nc.o networking/netstat.o networking/parse_pasv_epsv.o networking/ping.o networking/route.o networking/telnet.o networking/wget.o

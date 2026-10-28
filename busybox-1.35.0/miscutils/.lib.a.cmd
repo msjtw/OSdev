@@ -1,0 +1,1 @@
+cmd_miscutils/lib.a := rm -f miscutils/lib.a; riscv32-unknown-linux-musl-ar  rcs miscutils/lib.a miscutils/ascii.o miscutils/bc.o miscutils/hexedit.o miscutils/i2c_tools.o miscutils/lsscsi.o miscutils/partprobe.o miscutils/setfattr.o miscutils/setserial.o miscutils/ts.o

@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 IMAGE=${1:-"$ROOT/build/rootfs.ext4"}
-BUSYBOX_DIR=${BUSYBOX_DIR:-"$ROOT/../../busybox-1.35.0"}
+BUSYBOX_DIR=${BUSYBOX_DIR:-"$ROOT/../busybox-1.35.0"}
 
 if [ ! -f "$BUSYBOX_DIR/Makefile" ]; then
     echo "BusyBox source tree not found: $BUSYBOX_DIR" >&2
