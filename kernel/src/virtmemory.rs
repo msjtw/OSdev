@@ -2,7 +2,7 @@ mod kvm;
 mod sv32;
 mod uvm;
 
-use core::{alloc::Layout, ptr::copy_nonoverlapping};
+use core::{alloc::Layout, mem::MaybeUninit, ptr::copy_nonoverlapping};
 
 use alloc::{string::String, vec::Vec};
 
@@ -84,24 +84,85 @@ fn walkaddr(pagetree: &mut PageTable, virt_a: usize, access: UserAccess) -> Opti
     Some(pa)
 }
 
-// copy from given address space INTO current
-pub fn copy_in<T: Clone>(uv: &mut Uvm, addr: usize) -> Result<T, ()> {
-    let size = size_of::<T>();
-    let bytes = copy_in_bytes(uv, addr, size)?;
-    let value = unsafe { bytes.as_ptr().cast::<T>().read_unaligned() };
-    Ok(value)
+// checks whether an entire user-memory range is accessible before copying anything
+fn check_user_range(uv: &mut Uvm, mut addr: usize, len: usize, access: UserAccess) -> Result<(), ()> {
+    if len == 0 {
+        return Ok(());
+    }
+    let end = addr.checked_add(len).filter(|end| *end <= TRAPFRAME).ok_or(())?;
+    while addr < end {
+        walkaddr(&mut uv.pagetable, addr, access).ok_or(())?;
+        addr += (end - addr).min(PAGESIZE - addr % PAGESIZE);
+    }
+    Ok(())
+}
+
+// copy from user into current (kernel)
+unsafe fn copy_in_bytes(
+    uv: &mut Uvm,
+    mut addr: usize,
+    mut destination: *mut MaybeUninit<u8>,
+    len: usize,
+) -> Result<(), ()> {
+    check_user_range(uv, addr, len, UserAccess::Read)?;
+    let mut remaining = len;
+    while remaining != 0 {
+        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Read).ok_or(())?;
+        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
+        unsafe {
+            copy_nonoverlapping(phys as *const MaybeUninit<u8>, destination, chunk);
+            destination = destination.add(chunk);
+        }
+        addr = addr.checked_add(chunk).ok_or(())?;
+        remaining -= chunk;
+    }
+    Ok(())
+}
+
+// copy from current (kernel) outto user
+unsafe fn copy_out_bytes(
+    uv: &mut Uvm,
+    mut addr: usize,
+    mut source: *const MaybeUninit<u8>,
+    len: usize,
+) -> Result<(), ()> {
+    check_user_range(uv, addr, len, UserAccess::Write)?;
+    let mut remaining = len;
+    while remaining != 0 {
+        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Write).ok_or(())?;
+        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
+        unsafe {
+            copy_nonoverlapping(source, phys as *mut MaybeUninit<u8>, chunk);
+            source = source.add(chunk);
+        }
+        addr = addr.checked_add(chunk).ok_or(())?;
+        remaining -= chunk;
+    }
+    Ok(())
+}
+
+pub fn copy_in<T: Copy>(uv: &mut Uvm, addr: usize) -> Result<T, ()> {
+    let mut value = MaybeUninit::<T>::uninit();
+    unsafe {
+        copy_in_bytes(uv, addr, value.as_mut_ptr().cast(), size_of::<T>())?;
+        Ok(value.assume_init())
+    }
 }
 
 pub fn copy_in_cont<T: Copy>(uv: &mut Uvm, addr: usize, count: usize) -> Result<Vec<T>, ()> {
-    let size = size_of::<T>();
-    let bytes = copy_in_bytes(uv, addr, count.checked_mul(size).ok_or(())?)?;
-    let mut values = Vec::new();
+    let len = count.checked_mul(size_of::<T>()).ok_or(())?;
+    let mut values = Vec::<T>::new();
     values.try_reserve_exact(count).map_err(|_| ())?;
-    for i in 0..count {
-        let value = unsafe { bytes.as_ptr().add(i * size).cast::<T>().read_unaligned() };
-        values.push(value);
+    unsafe {
+        copy_in_bytes(uv, addr, values.as_mut_ptr().cast(), len)?;
+        // No initialized elements are exposed (or dropped) on copy failure.
+        values.set_len(count);
     }
     Ok(values)
+}
+
+pub fn copy_in_slice(uv: &mut Uvm, addr: usize, destination: &mut [u8]) -> Result<(), ()> {
+    unsafe { copy_in_bytes(uv, addr, destination.as_mut_ptr().cast(), destination.len()) }
 }
 
 pub fn copy_in_str(uv: &mut Uvm, mut addr: usize) -> Result<String, ()> {
@@ -123,7 +184,6 @@ pub fn copy_in_str(uv: &mut Uvm, mut addr: usize) -> Result<String, ()> {
     }
 }
 
-// copy from current OUT to user
 pub fn copy_out<T>(uv: &mut Uvm, addr: usize, data: T) -> Result<(), ()> {
     unsafe { copy_out_bytes(uv, addr, (&data as *const T).cast(), size_of::<T>()) }
 }
@@ -133,60 +193,23 @@ pub fn copy_out_cont<T: Copy>(uv: &mut Uvm, addr: usize, data: &[T]) -> Result<(
     unsafe { copy_out_bytes(uv, addr, data.as_ptr().cast(), len) }
 }
 
-fn copy_in_bytes(uv: &mut Uvm, mut addr: usize, len: usize) -> Result<Vec<u8>, ()> {
-    let mut remaining = len;
-    if len == 0 {
-        return Ok(Vec::new());
-    }
-    let end = addr.checked_add(remaining).ok_or(())?;
-    if end > TRAPFRAME {
-        return Err(());
-    }
-
-    let mut bytes = Vec::<u8>::new();
-    // small optimisation, this reserves the space but doest set len
-    bytes.try_reserve_exact(len).map_err(|_| ())?;
-    let mut bytes_ptr = bytes.as_mut_ptr();
-    while remaining != 0 {
-        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Read).ok_or(())?;
-        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
-        unsafe {
-            // copy straight into bytes
-            copy_nonoverlapping(phys as *const u8, bytes_ptr, chunk);
-            bytes_ptr = bytes_ptr.add(chunk);
-        }
-        addr = addr.checked_add(chunk).ok_or(())?;
-        remaining -= chunk;
-    }
-    // everything successful so set it's length
-    unsafe { bytes.set_len(len) };
-    Ok(bytes)
-}
-
-unsafe fn copy_out_bytes(
-    uv: &mut Uvm,
-    mut addr: usize,
-    mut source: *const core::mem::MaybeUninit<u8>, // data that may be uninitialized
-    len: usize,
+pub fn copy_between(
+    from: &mut Uvm,
+    mut source: usize,
+    to: &mut Uvm,
+    mut destination: usize,
+    mut len: usize,
 ) -> Result<(), ()> {
-    if len == 0 {
-        return Ok(());
-    }
-    let end = addr.checked_add(len).ok_or(())?;
-    if end > TRAPFRAME {
-        return Err(());
-    }
-
-    let mut remaining = len;
-    while remaining != 0 {
-        let phys = walkaddr(&mut uv.pagetable, addr, UserAccess::Write).ok_or(())?;
-        let chunk = remaining.min(PAGESIZE - addr % PAGESIZE);
-        unsafe {
-            copy_nonoverlapping(source, phys as *mut core::mem::MaybeUninit<u8>, chunk);
-            source = source.add(chunk);
-        }
-        addr = addr.checked_add(chunk).ok_or(())?;
-        remaining -= chunk;
+    check_user_range(from, source, len, UserAccess::Read)?;
+    check_user_range(to, destination, len, UserAccess::Write)?;
+    while len != 0 {
+        let source_pa = walkaddr(&mut from.pagetable, source, UserAccess::Read).ok_or(())?;
+        let destination_pa = walkaddr(&mut to.pagetable, destination, UserAccess::Write).ok_or(())?;
+        let count = len.min(PAGESIZE - source % PAGESIZE).min(PAGESIZE - destination % PAGESIZE);
+        unsafe { core::ptr::copy(source_pa as *const u8, destination_pa as *mut u8, count) };
+        source += count;
+        destination += count;
+        len -= count;
     }
     Ok(())
 }

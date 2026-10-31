@@ -1,3 +1,20 @@
+#[derive(Debug, Default)]
+pub struct Counter {
+    last: usize,
+}
+
+impl Counter {
+    pub const fn new() -> Self {
+        Self { last: 0 }
+    }
+
+    pub fn next(&mut self) -> Option<usize> {
+        let next = self.last.checked_add(1)?;
+        self.last = next;
+        Some(next)
+    }
+}
+
 // Fixed-capacity byte FIFO with no heap allocation.
 #[derive(Debug)]
 pub struct RingBuffer<const CAPACITY: usize> {

@@ -1,5 +1,6 @@
 mod elf;
 pub mod fd;
+pub mod ipc;
 pub mod pipe;
 pub mod poll;
 pub mod signals;
@@ -191,6 +192,8 @@ pub struct Process {
     pub blocked_signals: u64,
     pub signal_actions: [signals::SigAction; signals::SIGNAL_COUNT],
 
+    pub ipc: ipc::IpcQueue,
+
     // Linux leaves slots after close, so a table entry becomes None while its
     // index remains a valid descriptor number for later reuse.
     pub fds: fd::FdTable,
@@ -216,6 +219,7 @@ impl Process {
             pending_signals: 0,
             blocked_signals: 0,
             signal_actions: [signals::SigAction::default(); signals::SIGNAL_COUNT],
+            ipc: ipc::IpcQueue::default(),
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
@@ -225,6 +229,7 @@ impl Process {
     }
 
     pub fn free(&mut self) -> Result<(), ()> {
+        self.ipc = ipc::IpcQueue::default();
         self.pid = None;
         self.pgid = None;
         self.sid = None;
@@ -494,6 +499,11 @@ impl Process {
     pub fn kexit(&mut self, xstatus: u32) -> ! {
         if self.pid == Some(0) {
             panic!("init exit");
+        }
+
+        {
+            let mut kernel = KERNEL.get().unwrap().lock();
+            ipc::cancel_call(&mut kernel, self);
         }
 
         // Close before taking exit locks

@@ -4,6 +4,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
     FRAME_ALLOCATOR, KSTACK,
+    structures::Counter,
     process::{
         Context, KERNEL_STACK_PAGES, ProcState, Process, forkret,
         trap::{interrupt_off, interrupt_on, interrupt_read, trapframe::Trapframe},
@@ -55,7 +56,8 @@ impl Cpu {
 pub struct Kernel {
     pub kvm: Option<virtmemory::Kvm>,
     pub process_table: Vec<Process>,
-    pub pid: usize,
+    pub ipc_req_id: Counter,
+    pub pid: Counter,
 }
 
 impl Kernel {
@@ -80,8 +82,9 @@ impl Kernel {
     pub fn allocproc(&mut self) -> Option<&mut Process> {
         for p in &mut self.process_table {
             if p.state == ProcState::Unused {
-                self.pid += 1;
-                p.pid = Some(self.pid);
+                let pid = self.pid.next()?;
+                p.ipc = crate::process::ipc::IpcQueue::default();
+                p.pid = Some(pid);
                 p.pgid = p.pid;
                 p.state = ProcState::Used;
                 p.trapframe = Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR);

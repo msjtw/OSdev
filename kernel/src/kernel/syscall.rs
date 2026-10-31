@@ -1,4 +1,5 @@
 mod sys_file;
+mod sys_ipc;
 mod sys_memory;
 mod sys_proc;
 mod sys_signals;
@@ -13,6 +14,7 @@ use crate::{
             sys_lseek, sys_ppoll, sys_read, sys_statx, sys_write, sys_writev,
         },
         sys_memory::{sys_brk, sys_mmap, sys_munmap},
+        sys_ipc::{sys_ipc_call, sys_ipc_read_payload, sys_ipc_receive, sys_ipc_reply},
         sys_proc::*,
         sys_signals::{sys_rt_sigaction, sys_rt_sigprocmask, sys_rt_sigreturn},
         sys_shutdown::{sys_kill, sys_reboot, sys_sync},
@@ -72,6 +74,10 @@ pub const SYS_CLOCK_GETRES_TIME64: usize = 406;
 pub const SYS_CLOCK_NANOSLEEP_TIME64: usize = 407;
 pub const SYS_PPOLL_TIME64: usize = 414;
 
+pub use crate::process::ipc::abi::{
+    SYS_IPC_CALL, SYS_IPC_READ_PAYLOAD, SYS_IPC_RECEIVE, SYS_IPC_REPLY,
+};
+
 // NOTE:
 // syscall number: a7
 // arguments: a0-a5
@@ -128,6 +134,10 @@ pub fn syscall(proc: &mut Process) {
         SYS_CLOCK_GETRES_TIME64 => sys_clock_getres_time64(proc),
         SYS_CLOCK_NANOSLEEP_TIME64 => sys_clock_nanosleep_time64(proc),
         SYS_PPOLL_TIME64 => sys_ppoll(proc),
+        SYS_IPC_CALL => sys_ipc_call(proc),
+        SYS_IPC_RECEIVE => sys_ipc_receive(proc),
+        SYS_IPC_READ_PAYLOAD => sys_ipc_read_payload(proc),
+        SYS_IPC_REPLY => sys_ipc_reply(proc),
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);
             proc.trapframe.a0 = Errno::ENOSYS.into();

@@ -143,6 +143,20 @@ pub fn has_unblocked_pending(proc: &Process) -> bool {
     proc.pending_signals & !(proc.blocked_signals & !unblockable_mask()) != 0
 }
 
+/// Blocking IPC is interrupted by caught or terminating signals, not ignored
+/// ones. SIGCHLD's default disposition is ignored in this kernel.
+pub fn has_interrupting_pending(proc: &Process) -> bool {
+    let pending = proc.pending_signals & !(proc.blocked_signals & !unblockable_mask());
+    (1..SIGNAL_COUNT).any(|signal| {
+        if pending & (1u64 << (signal - 1)) == 0 {
+            return false;
+        }
+        let handler = proc.signal_actions[signal].handler;
+        signal == SIGKILL
+            || (handler != SIG_IGN && !(signal == SIGCHLD && handler == SIG_DFL))
+    })
+}
+
 // deliver one pending signal
 pub fn deliver_pending(proc: &mut Process) {
     let pending = proc.pending_signals & !(proc.blocked_signals & !unblockable_mask());

@@ -7,7 +7,7 @@ buddy_system_allocator
 linked-list-allocator
 doc.md
 REVIEW.md
-task.md
+task*.md
 book-riscv-rev5.pdf
 .venv/
 build/test-artifacts/
