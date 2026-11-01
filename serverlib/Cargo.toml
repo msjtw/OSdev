@@ -1,0 +1,14 @@
+[package]
+name = "serverlib"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["userspace"]
+userspace = []
+
+[dependencies]
+
+[[example]]
+name = "ipc_smoke"
+required-features = ["userspace"]
