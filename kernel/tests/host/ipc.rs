@@ -1,7 +1,7 @@
 //! Host-side data-structure tests; no kernel runtime hooks.
 extern crate alloc;
 
-#[path = "../../src/process/ipc/abi.rs"]
+#[path = "../../../serverlib/src/abi.rs"]
 mod abi;
 #[path = "../../src/errno.rs"]
 mod errno;

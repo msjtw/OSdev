@@ -5,10 +5,7 @@ edition = "2024"
 
 [features]
 default = ["userspace"]
-userspace = []
+userspace = ["dep:buddy_system_allocator"]
 
 [dependencies]
-
-[[example]]
-name = "ipc_smoke"
-required-features = ["userspace"]
+buddy_system_allocator = { version = "0.12.0", default-features = false, features = ["use_spin"], optional = true }

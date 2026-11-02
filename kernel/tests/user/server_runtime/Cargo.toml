@@ -1,0 +1,15 @@
+[package]
+name = "server-runtime-test"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+custom-panic = []
+
+[dependencies]
+serverlib = { path = "../../../../serverlib" }
+
+[profile.dev]
+panic = "abort"
+
+[workspace]
