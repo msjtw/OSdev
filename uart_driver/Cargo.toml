@@ -1,0 +1,20 @@
+[package]
+name = "uart_driver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serverlib = { path = "../serverlib" }
+
+[features]
+server = []
+
+[[bin]]
+name = "uart_driver"
+path = "src/main.rs"
+required-features = ["server"]
+test = false
+bench = false
+
+[profile.release]
+panic = "abort"
