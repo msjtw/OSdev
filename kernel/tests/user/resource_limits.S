@@ -51,7 +51,7 @@ fork_more:
 exhausted:
     li t0, -11                 /* EAGAIN */
     bne a0, t0, failed
-    li t0, 30                  /* 32 minus shell and this test parent */
+    li t0, 29                  /* 32 minus shell, UART, and this test parent */
     bne s0, t0, failed
 reap:
     call wait_child

@@ -329,21 +329,32 @@ impl Process {
     }
 
     pub fn kexec(&mut self, path: String, argv: Vec<&str>) -> Result<(), Errno> {
+        Self::check_exec_args(&argv)?;
+        let path = crate::vfs::resolve_path(self.cwd.as_deref().unwrap_or("/"), &path)?;
+        let img = crate::vfs::read_all(&path)?;
+        self.kexec_bytes(&img, argv)
+    }
+
+    fn check_exec_args(argv: &[&str]) -> Result<(), Errno> {
         let arg_bytes = argv.iter().try_fold(0usize, |total, arg| {
             total.checked_add(arg.len())?.checked_add(1)
         }).ok_or(Errno::E2BIG)?;
         if argv.len() > 64 || arg_bytes > 16 * 1024 {
             return Err(Errno::E2BIG);
         }
-        let path = crate::vfs::resolve_path(self.cwd.as_deref().unwrap_or("/"), &path)?;
-        let img = crate::vfs::read_all(&path)?;
-        let entry = elf::get_elf_entry(&img).map_err(|_| Errno::ENOEXEC)?;
+        Ok(())
+    }
+
+    // Shared ELF/stack loading for filesystem exec and embedded bootstrap images.
+    pub fn kexec_bytes(&mut self, img: &[u8], argv: Vec<&str>) -> Result<(), Errno> {
+        Self::check_exec_args(&argv)?;
+        let entry = elf::get_elf_entry(img).map_err(|_| Errno::ENOEXEC)?;
 
         let mut pagetree = Uvm::new().map_err(|_| Errno::ENOMEM)?;
         pagetree.init_proc(self).map_err(|_| Errno::ENOMEM)?;
 
         let mut image_end = 0;
-        for segment in elf::get_elf_segments(&img).map_err(|_| Errno::ENOEXEC)? {
+        for segment in elf::get_elf_segments(img).map_err(|_| Errno::ENOEXEC)? {
             if segment.p_type == 3 { // PT_INTERP: dynamic linking is unsupported.
                 return Err(Errno::ENOEXEC);
             }
@@ -366,7 +377,7 @@ impl Process {
                 .map(|size| size & !(PAGESIZE - 1))
                 .ok_or(Errno::ENOEXEC)?;
             let map_end = page_start.checked_add(map_size).ok_or(Errno::ENOEXEC)?;
-            let data = elf::segment_bytes(&img, &segment).ok_or(Errno::ENOEXEC)?;
+            let data = elf::segment_bytes(img, &segment).ok_or(Errno::ENOEXEC)?;
 
             pagetree
                 .map_elf_segment(page_start, map_size, elf_flags_to_pte(segment.p_flags))

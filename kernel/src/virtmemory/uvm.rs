@@ -26,7 +26,7 @@ pub struct Uvm {
     pub mmap_next: usize,
     page_list: Vec<usize>,
     size: usize,
-    pub(super) pagetable: PageTable,
+    pub(crate) pagetable: PageTable,
 }
 
 impl Clone for Uvm {

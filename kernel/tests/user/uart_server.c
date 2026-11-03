@@ -1,4 +1,4 @@
-/* IPC-011 smoke: execute the real UART ELF without any test-only MMIO grant. */
+/* Standalone/embedded UART smoke, without test-only MMIO grants. */
 typedef unsigned long word;
 #ifndef UART_ADDRESS_ARG
 #define UART_ADDRESS_ARG "0x10000000"
@@ -28,6 +28,13 @@ static void check(int condition) {
 }
 
 __attribute__((noreturn)) void _start(void) {
+#ifdef UART_BOOTSTRAP
+    word child = 3;
+    check(sc(172, 0, 0, 0, 0, 0) >= 4);
+    check(sc(129, 1, 0, 0, 0, 0) == (word)-1);
+    check(sc(129, 2, 0, 0, 0, 0) == (word)-3);
+    check(sc(129, child, 0, 0, 0, 0) == (word)-1);
+#else
     word child = sc(220, 17, 0, 0, 0, 0);
     check((long)child >= 0);
     if (child == 0) {
@@ -37,12 +44,14 @@ __attribute__((noreturn)) void _start(void) {
         sc(221, (word)path, (word)argv, 0, 0, 0);
         leave(1);
     }
+#endif
     const word operations[] = {63, 64, 0x8000ffffUL};
     for (word i = 0; i < 3; ++i) {
         /* Claimed kernel sender is overwritten; no request may touch MMIO. */
         struct Message message = {0, operations[i], {0, 0, 8197, 0, 0, 0}};
         check(sc(0x80000001UL, child, (word)&message, 0, 0, 0) == (word)-1);
     }
+#ifndef UART_BOOTSTRAP
     check(sc(129, child, 0, 0, 0, 0) == 0);
     check(sc(129, child, 15, 0, 0, 0) == 0);
     for (;;) {
@@ -53,6 +62,9 @@ __attribute__((noreturn)) void _start(void) {
     }
     check(siginfo[2] == 2 && siginfo[3] == child && siginfo[5] == 15);
     static const char success[] = "UART_SERVER_OK\n";
+#else
+    static const char success[] = "UART_BOOTSTRAP_OK\n";
+#endif
     sc(64, 1, (word)success, sizeof(success) - 1, 0, 0);
     leave(0);
 }

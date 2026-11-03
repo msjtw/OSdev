@@ -160,11 +160,6 @@ impl PageTable {
                     PageTable::free_req(root);
                     // walk() allocates page-table nodes from the heap.
                     unsafe { HEAP_ALLOCATOR.dealloc(root.as_ptr() as *mut u8, PAGE_LAYOUT) };
-                } else {
-                    panic!(
-                        "unmapping allocated page 0x{:x} perm: 0b{:b}",
-                        pte.pa, pte.perm
-                    );
                 }
             }
         }
@@ -220,7 +215,7 @@ impl PageTable {
         }
     }
 
-    pub(super) fn map(&mut self, virt: usize, phys: usize, size: usize, perm: usize) -> Result<(), ()> {
+    pub(crate) fn map(&mut self, virt: usize, phys: usize, size: usize, perm: usize) -> Result<(), ()> {
         if !phys.is_multiple_of(PAGESIZE) {
             panic!("mapping to unalinged frame 0x{:08x}\n", phys);
         }

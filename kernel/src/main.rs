@@ -8,17 +8,16 @@ mod csr;
 mod drivers;
 pub mod errno;
 mod fs;
-pub mod vfs;
 mod kernel;
 pub mod lock;
 mod log;
 mod process;
 pub mod structures;
+pub mod vfs;
 pub mod virtmemory;
 
 extern crate alloc;
-use alloc::string::String;
-use alloc::vec;
+use alloc::{format, string::String, vec};
 use spin::Once;
 
 use core::arch::global_asm;
@@ -28,7 +27,10 @@ use core::ptr::write_volatile;
 use crate::kernel::{Cpu, Kernel};
 use crate::process::trap::init_trap;
 use crate::process::trap::trampoline::{userret, uservec};
-use crate::virtmemory::RAMEND;
+use crate::virtmemory::{PAGESIZE, PTE_R, PTE_U, PTE_W, RAMEND, UART};
+
+const UART_IMAGE: &[u8] =
+    include_bytes!("../../uart_driver/target/riscv32ima-unknown-none-elf/release/uart_driver");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -96,16 +98,28 @@ pub extern "C" fn main() -> ! {
         log::info!("Virt started");
 
         // Start init
-        let user_p0 = kernel.allocproc().unwrap();
-        unsafe { user_p0.lock.unlock_manual() };
-        user_p0.fds = process::initial_tty_fds();
-        user_p0.sid = user_p0.pid;
-        user_p0.pgid = user_p0.pid;
-        process::tty::TTY::set_controlling_session(user_p0.sid.unwrap());
-        user_p0
-            .kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])
-            .expect("failed to execute /bin/busybox from ext4");
-        user_p0.state = process::ProcState::Runnable;
+        let init = kernel.allocproc().unwrap();
+        unsafe { init.lock.unlock_manual() };
+        init.fds = process::initial_tty_fds();
+        init.sid = init.pid;
+        init.pgid = init.pid;
+        process::tty::TTY::set_controlling_session(init.sid.unwrap());
+        init.kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])
+            .expect("failed to exec busybox");
+        init.state = process::ProcState::Runnable;
+
+        // Start uart server
+        let uart = kernel.allocproc().unwrap();
+        unsafe { uart.lock.unlock_manual() };
+        let uart_address = format!("{UART:#x}");
+        uart.kexec_bytes(UART_IMAGE, vec!["uart", &uart_address])
+            .expect("failed to exec uart");
+        // map the uart page
+        uart.pagetable
+            .pagetable
+            .map(UART, UART, PAGESIZE, PTE_U | PTE_R | PTE_W)
+            .expect("failed to map UART");
+        uart.state = process::ProcState::Runnable;
     }
     log::info!("into the schedulervere");
     process::scheduler();

@@ -12,10 +12,7 @@ if [ ! -f "$BUSYBOX_DIR/Makefile" ]; then
     exit 1
 fi
 
-if [ -z "$UART_DRIVER_BIN" ]; then
-    UART_DRIVER_BIN=$(sh "$ROOT/../uart_driver/build.sh")
-fi
-if [ ! -f "$UART_DRIVER_BIN" ]; then
+if [ -n "$UART_DRIVER_BIN" ] && [ ! -f "$UART_DRIVER_BIN" ]; then
     echo "UART server ELF not found: $UART_DRIVER_BIN" >&2
     exit 1
 fi
@@ -31,8 +28,10 @@ make -C "$BUSYBOX_DIR" \
     CONFIG_INSTALL_APPLET_HARDLINKS=y \
     install >/dev/null
 
-mkdir -p "$STAGING/sbin"
-install -m 755 "$UART_DRIVER_BIN" "$STAGING/sbin/uart"
+if [ -n "$UART_DRIVER_BIN" ]; then
+    mkdir -p "$STAGING/sbin"
+    install -m 755 "$UART_DRIVER_BIN" "$STAGING/sbin/uart"
+fi
 
 cat >"$STAGING/lorem.txt" <<'EOF'
 Lorem ipsum dolor sit amet, consectetur adipiscing elit.
