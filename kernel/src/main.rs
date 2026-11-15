@@ -120,6 +120,7 @@ pub extern "C" fn main() -> ! {
             .map(UART, UART, PAGESIZE, PTE_U | PTE_R | PTE_W)
             .expect("failed to map UART");
         uart.state = process::ProcState::Runnable;
+        process::tty::TTY::set_uart_pid(uart.pid.unwrap());
     }
     log::info!("into the schedulervere");
     process::scheduler();

@@ -16,55 +16,94 @@ use super::{
     state::{CurrentReq, Request, RequestState, next_request_id},
 };
 
-fn alive(proc: &Process, pid: usize) -> bool {
-    proc.pid == Some(pid) && !matches!(proc.state, ProcState::Unused | ProcState::Zombie)
+// Find a process by PID, excluding unused slots and zombies.
+fn find_process(table: &mut [Process], pid: usize) -> Option<&mut Process> {
+    table.iter_mut().find(|proc| {
+        proc.pid == Some(pid) && !matches!(proc.state, ProcState::Unused | ProcState::Zombie)
+    })
 }
 
 fn channel(proc: &Process) -> usize {
     &proc.ipc as *const super::IpcQueue as usize
 }
 
-// wakeup single proc
-fn wakeup(proc: &mut Process) {
-    let _guard = proc.lock.lock();
-    if proc.state == ProcState::Sleeping && proc.sleep_channel == Some(channel(proc)) {
-        proc.state = ProcState::Runnable;
-    }
-}
-
 pub fn kernel_send(
     kernel: &mut Kernel,
     destination: usize,
     message: Message,
-    data: Option<Vec<u8>>,
+    mut data: Option<Vec<u8>>,
+) -> Result<Option<usize>, Errno> {
+    kernel_send_retained(kernel, destination, message, &mut data)
+}
+
+pub fn kernel_send_retained(
+    kernel: &mut Kernel,
+    destination: usize,
+    message: Message,
+    data: &mut Option<Vec<u8>>,
 ) -> Result<Option<usize>, Errno> {
     let Kernel {
         process_table,
         ipc_req_id,
         ..
     } = kernel;
-    let Some(server) = process_table
-        .iter_mut()
-        .find(|proc| alive(proc, destination))
-    else {
+    let Some(server) = find_process(process_table, destination) else {
         crate::log::debug!("ipc: dropping kernel message to absent pid {}", destination);
         return Ok(None);
     };
-    let id = server.ipc.push(ipc_req_id, KERNEL_SENDER_ID, message, data)?;
-    wakeup(server);
+    let id = server.ipc.push_retained(ipc_req_id, KERNEL_SENDER_ID, message, data)?;
+    server.wakeup_on(Some(channel(server)));
     Ok(Some(id))
 }
 
-/// Return the owned buffer together with the result, releasing its inbox entry.
+// Interruptible call on behalf of a kernel service, with owned payload storage.
+// Like user_call, returns the server's raw result word without interpreting it.
+pub fn kernel_call(
+    proc: &mut Process,
+    destination: usize,
+    message: Message,
+    data: Option<Vec<u8>>,
+) -> Result<usize, Errno> {
+    {
+        let mut kernel = KERNEL.get().unwrap().lock();
+        if proc.ipc.pending_call.is_some() {
+            return Err(Errno::EAGAIN);
+        }
+        if signals::has_interrupting_pending(proc) {
+            return Err(Errno::EINTR);
+        }
+        let id = match kernel_send(&mut kernel, destination, message, data)? {
+            Some(id) => id,
+            None => next_request_id(&mut kernel.ipc_req_id)?,
+        };
+        proc.ipc.begin_call(destination, id)?;
+    }
+    loop {
+        let mut kernel = KERNEL.get().unwrap().lock();
+        let current = proc.ipc.pending_call.expect("kernel IPC call missing request");
+        if let Some((result, _data)) = kernel_read_reply(&mut kernel, destination, current.id) {
+            proc.ipc.finish_call(destination, current.id);
+            return Ok(result);
+        }
+        if signals::has_interrupting_pending(proc) {
+            cancel_call(&mut kernel, proc);
+            return Err(Errno::EINTR);
+        }
+        unsafe { proc.lock.lock_manual() };
+        proc.sleep_channel = Some(channel(proc));
+        proc.state = ProcState::Sleeping;
+        drop(kernel);
+        unsafe { proc.sleep_locked() };
+    }
+}
+
+// Return the owned buffer together with the result, releasing its inbox entry.
 pub fn kernel_read_reply(
     kernel: &mut Kernel,
     destination: usize,
     id: usize,
 ) -> Option<(usize, Option<Vec<u8>>)> {
-    let server = kernel
-        .process_table
-        .iter_mut()
-        .find(|proc| alive(proc, destination))?;
+    let server = find_process(&mut kernel.process_table, destination)?;
     let request = server.ipc.get(id)?;
     if request.message.sender != KERNEL_SENDER_ID || request.state != RequestState::Completed {
         return None;
@@ -93,7 +132,7 @@ pub fn cancel_call(kernel: &mut Kernel, proc: &mut Process) {
 
 // checks whether a server’s request is still valid
 pub(super) fn current_request<'a>(
-    kernel: &Kernel,
+    kernel: &mut Kernel,
     server: &'a Process,
     id: usize,
 ) -> Result<&'a Request, Errno> {
@@ -103,11 +142,11 @@ pub(super) fn current_request<'a>(
     }
     if request.message.sender != KERNEL_SENDER_ID {
         let destination = server.pid.ok_or(Errno::ESRCH)?;
-        let active = kernel.process_table.iter().any(|caller| {
-            alive(caller, request.message.sender)
-                && caller.ipc.pending_call == Some(CurrentReq { destination, id })
-                && caller.ipc.call_result.is_none()
-        });
+        let active = find_process(&mut kernel.process_table, request.message.sender)
+            .is_some_and(|caller| {
+                caller.ipc.pending_call == Some(CurrentReq { destination, id })
+                    && caller.ipc.call_result.is_none()
+            });
         if !active {
             return Err(Errno::ESRCH);
         }
@@ -134,12 +173,9 @@ pub fn user_call(proc: &mut Process, destination: usize, message: Message) -> Re
                 ipc_req_id,
                 ..
             } = &mut *kernel;
-            if let Some(server) = process_table
-                .iter_mut()
-                .find(|candidate| alive(candidate, destination))
-            {
+            if let Some(server) = find_process(process_table, destination) {
                 let id = server.ipc.push(ipc_req_id, sender, message, None)?;
-                wakeup(server);
+                server.wakeup_on(Some(channel(server)));
                 id
             } else {
                 crate::log::debug!("ipc: calling non existing process {}", destination);
@@ -208,7 +244,7 @@ pub fn serv_read_payload(
     length: usize,
 ) -> Result<usize, Errno> {
     let mut kernel = KERNEL.get().unwrap().lock();
-    let message = current_request(&kernel, proc, id)?.message;
+    let message = current_request(&mut kernel, proc, id)?.message;
     if message.operation != SYS_WRITE && message.operation & CUSTOM_BIT == 0 {
         return Err(Errno::EINVAL);
     }
@@ -219,10 +255,7 @@ pub fn serv_read_payload(
         let bytes = data.get(offset..offset + length).ok_or(Errno::EINVAL)?;
         copy_out_cont(&mut proc.pagetable, destination, bytes).map_err(|_| Errno::EFAULT)?;
     } else {
-        let caller = kernel
-            .process_table
-            .iter_mut()
-            .find(|caller| alive(caller, message.sender))
+        let caller = find_process(&mut kernel.process_table, message.sender)
             .ok_or(Errno::ESRCH)?;
         copy_between(
             &mut caller.pagetable,
@@ -258,7 +291,7 @@ pub fn serv_reply(
     if request.state != RequestState::Delivered {
         return Err(Errno::EINVAL);
     }
-    let message = match current_request(&kernel, proc, id) {
+    let message = match current_request(&mut kernel, proc, id) {
         Ok(request) => request.message,
         Err(_) => {
             proc.ipc.remove(id);
@@ -278,10 +311,7 @@ pub fn serv_reply(
             let bytes = data.get_mut(..length).ok_or(Errno::EINVAL)?;
             copy_in_slice(&mut proc.pagetable, source, bytes).map_err(|_| Errno::EFAULT)?;
         } else {
-            let caller = kernel
-                .process_table
-                .iter_mut()
-                .find(|caller| alive(caller, message.sender))
+            let caller = find_process(&mut kernel.process_table, message.sender)
                 .ok_or(Errno::ESRCH)?;
             copy_between(
                 &mut proc.pagetable,
@@ -297,18 +327,20 @@ pub fn serv_reply(
         let request = proc.ipc.get_mut(id).unwrap();
         request.result = Some(result);
         request.state = RequestState::Completed;
+        let destination = proc.pid.ok_or(Errno::ESRCH)?;
+        for caller in &mut kernel.process_table {
+            if caller.ipc.pending_call == Some(CurrentReq { destination, id }) {
+                caller.wakeup_on(Some(channel(caller)));
+            }
+        }
         return Ok(());
     }
 
     let destination = proc.pid.ok_or(Errno::ESRCH)?;
-    if let Some(caller) = kernel
-        .process_table
-        .iter_mut()
-        .find(|candidate| alive(candidate, message.sender))
-    {
+    if let Some(caller) = find_process(&mut kernel.process_table, message.sender) {
         if caller.ipc.pending_call == Some(CurrentReq { destination, id }) {
             caller.ipc.call_result = Some(result);
-            wakeup(caller);
+            caller.wakeup_on(Some(channel(caller)));
         }
     }
     proc.ipc.remove(id);

@@ -15,6 +15,18 @@ use state::{CurrentReq, IpcQueue, RequestState};
 use structures::Counter;
 
 #[test]
+fn retained_payload_transfers_only_on_success() {
+    let mut inbox = IpcQueue::default();
+    let mut ids = Counter::default();
+    let mut data = Some(vec![1, 2, 3]);
+    assert!(inbox.push_retained(&mut ids, 7, Message::default(), &mut data).is_err());
+    assert_eq!(data.as_deref(), Some([1, 2, 3].as_slice()));
+    let id = inbox.push_retained(&mut ids, 0, Message::default(), &mut data).unwrap();
+    assert!(data.is_none());
+    assert_eq!(inbox.get(id).unwrap().kernel_data.as_deref(), Some([1, 2, 3].as_slice()));
+}
+
+#[test]
 fn fifo_grows_beyond_the_original_suggested_capacity() {
     let mut inbox = IpcQueue::default();
     let mut ids = Counter::default();

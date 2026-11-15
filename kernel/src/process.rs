@@ -258,6 +258,16 @@ impl Process {
         unsafe { self.lock.unlock_manual() };
     }
 
+    /// Wake this process if it is sleeping on `channel`, returning whether it woke.
+    pub fn wakeup_on(&mut self, channel: Option<usize>) -> bool {
+        let _guard = self.lock.lock();
+        if self.state == ProcState::Sleeping && self.sleep_channel == channel {
+            self.state = ProcState::Runnable;
+            return true;
+        }
+        false
+    }
+
     /// Switch away from the current process after its caller has marked it
     /// Sleeping and acquired `self.lock`. The caller must release any other
     /// locks before calling this so the scheduler can run.
@@ -690,6 +700,9 @@ pub fn scheduler() -> ! {
         let mut found = ptr::null_mut();
         unsafe {
             interrupt_on();
+        }
+        tty::service_transport();
+        unsafe {
             interrupt_off();
         }
         {

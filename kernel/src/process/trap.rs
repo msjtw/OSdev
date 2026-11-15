@@ -253,8 +253,7 @@ unsafe fn timer(proc: Option<&mut Process>) {
         // print!("user>time: 0x{:x}, next timer on: 0x{:x}\n", time, next);
         write_csr64!(stimecmp, next);
 
-        // poll uart on timer
-        crate::process::tty::TTY::get().poll_input();
+        crate::process::tty::request_input_poll();
         crate::drivers::block::periodic_flush();
 
         // wakeup timer sleeping processes

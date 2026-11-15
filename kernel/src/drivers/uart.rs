@@ -1,10 +1,6 @@
-use core::ptr::{read_volatile, write_volatile};
+use core::ptr::write_volatile;
 
 use crate::virtmemory::UART;
-
-const UART_RHR: usize = 0;
-const UART_LSR: usize = 5;
-const UART_LSR_DATA_READY: u8 = 1 << 0;
 
 pub static UART_DRIVER: UartDriver = UartDriver::new();
 
@@ -14,15 +10,6 @@ pub struct UartDriver;
 impl UartDriver {
     pub const fn new() -> Self {
         Self
-    }
-
-    // Drain raw bytes from the UART receive FIFO.
-    pub fn drain_input(&self, mut consumer: impl FnMut(u8)) {
-        let uart = UART as *const u8;
-
-        while unsafe { read_volatile(uart.add(UART_LSR)) } & UART_LSR_DATA_READY != 0 {
-            consumer(unsafe { read_volatile(uart.add(UART_RHR)) });
-        }
     }
 
     pub fn write(&self, bytes: &[u8]) {

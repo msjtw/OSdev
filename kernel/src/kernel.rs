@@ -122,18 +122,9 @@ impl Kernel {
     }
 
     pub fn wakeup(&mut self, channel: Option<usize>, wake_all: bool) {
-        unsafe {
-            for proc in &mut self.process_table {
-                proc.lock.lock_manual();
-                if proc.state == ProcState::Sleeping && proc.sleep_channel == channel {
-                    proc.state = ProcState::Runnable;
-                    proc.lock.unlock_manual();
-                    if !wake_all {
-                        return;
-                    }
-                    continue;
-                }
-                proc.lock.unlock_manual();
+        for proc in &mut self.process_table {
+            if proc.wakeup_on(channel) && !wake_all {
+                return;
             }
         }
     }

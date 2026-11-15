@@ -41,8 +41,19 @@ impl IpcQueue {
         &mut self,
         ids: &mut Counter,
         sender: usize,
-        mut message: Message,
+        message: Message,
         mut data: Option<Vec<u8>>,
+    ) -> Result<usize, Errno> {
+        self.push_retained(ids, sender, message, &mut data)
+    }
+
+    // Transfer owned bytes only after enqueue succeeds, so async producers can retry.
+    pub fn push_retained(
+        &mut self,
+        ids: &mut Counter,
+        sender: usize,
+        mut message: Message,
+        data: &mut Option<Vec<u8>>,
     ) -> Result<usize, Errno> {
         if data.is_some() && sender != KERNEL_SENDER_ID {
             return Err(Errno::EINVAL);
@@ -59,7 +70,7 @@ impl IpcQueue {
             message,
             state: RequestState::Queued,
             result: None,
-            kernel_data: data,
+            kernel_data: data.take(),
         });
         Ok(id)
     }

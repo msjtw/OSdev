@@ -1,17 +1,20 @@
 use alloc::{
     collections::VecDeque,
     sync::Arc,
+    vec::Vec,
 };
+use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Once;
 
 use crate::{
     KERNEL,
     errno::Errno,
-    drivers::uart::{UART_DRIVER, UartDriver},
+    kernel::syscall::{SYS_READ, SYS_WRITE},
     lock::IntMutex,
     process::{
         ProcState, Process,
         fd::FileOps,
+        ipc::{self, abi::Message},
         poll::{POLLIN, POLLOUT, PollEvents, wake_poll_waiters},
         signals::{self, SIGINT},
     },
@@ -91,10 +94,32 @@ pub(crate) struct TTY {
     session_id: IntMutex<Option<usize>>, // controlling session id
     foreground_pgid: IntMutex<Option<usize>>, // foreground process group id
     input: IntMutex<TtyInput>,
-    transport: &'static UartDriver,
+    uart: IntMutex<UartTransport>,
 }
 
 static TTY: Once<Arc<TTY>> = Once::new();
+static INPUT_POLL_PENDING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Default)]
+struct UartTransport {
+    pid: Option<usize>,
+    input_request: Option<usize>,
+    echo_pending: Vec<u8>,
+    echo_request: Option<usize>,
+    echo_retry: Option<Vec<u8>>,
+}
+
+// Interrupt context only requests work. No allocation, IPC, or TTY locks here.
+pub fn request_input_poll() {
+    INPUT_POLL_PENDING.store(true, Ordering::Relaxed);
+}
+
+pub fn service_transport() {
+    if let Some(tty) = TTY.get() {
+        tty.poll_input();
+        tty.poll_echo();
+    }
+}
 
 impl TTY {
     fn new() -> Self {
@@ -103,7 +128,7 @@ impl TTY {
             session_id: IntMutex::new(None),
             foreground_pgid: IntMutex::new(None),
             input: IntMutex::new(TtyInput::default()),
-            transport: &UART_DRIVER,
+            uart: IntMutex::new(UartTransport::default()),
         }
     }
 
@@ -126,9 +151,100 @@ impl TTY {
         self as *const Self as usize
     }
 
-    // Drain input from the UART transport into this terminal.
-    pub fn poll_input(&self) {
-        self.transport.drain_input(|bytes| self.receive_byte(bytes));
+    pub fn set_uart_pid(pid: usize) {
+        Self::get().uart.lock().pid = Some(pid);
+    }
+
+    fn poll_input(&self) {
+        let completion = {
+            let mut state = self.uart.lock();
+            let Some(pid) = state.pid else {
+                return;
+            };
+            if let Some(id) = state.input_request {
+                let mut kernel = KERNEL.get().unwrap().lock();
+                let Some(reply) = ipc::kernel_read_reply(&mut kernel, pid, id) else {
+                    return;
+                };
+                state.input_request = None;
+                Some(reply)
+            } else {
+                None
+            }
+        };
+        // Line discipline can acquire process/TTY locks and generate signals.
+        // Do not run it while holding the kernel IPC or transport-state locks.
+        if let Some((count, Some(bytes))) = completion {
+            if count as isize >= 0 && count <= bytes.len() {
+                if count != 0 {
+                    request_input_poll();
+                }
+                for &byte in &bytes[..count] {
+                    self.receive_byte(byte);
+                }
+            }
+        }
+        if !INPUT_POLL_PENDING.swap(false, Ordering::Relaxed) {
+            return;
+        }
+        let mut state = self.uart.lock();
+        let Some(pid) = state.pid else {
+            return;
+        };
+        // A polling batch, not a UART protocol payload limit.
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(256).is_err() {
+            request_input_poll();
+            return;
+        }
+        bytes.resize(256, 0);
+        let message = Message {
+            operation: SYS_READ,
+            args: [0, 0, bytes.len(), 0, 0, 0],
+            ..Message::default()
+        };
+        let mut kernel = KERNEL.get().unwrap().lock();
+        match ipc::kernel_send(&mut kernel, pid, message, Some(bytes)) {
+            Ok(Some(id)) => state.input_request = Some(id),
+            Ok(None) | Err(_) => request_input_poll(),
+        }
+    }
+
+    fn poll_echo(&self) {
+        let mut state = self.uart.lock();
+        let Some(pid) = state.pid else {
+            return;
+        };
+        let mut kernel = KERNEL.get().unwrap().lock();
+        if let Some(id) = state.echo_request {
+            let Some((result, data)) = ipc::kernel_read_reply(&mut kernel, pid, id) else {
+                return;
+            };
+            state.echo_request = None;
+            if let Some(mut bytes) = data {
+                // Keep untransmitted echo in order across errors or short replies.
+                if result as isize >= 0 && result <= bytes.len() {
+                    bytes.drain(..result);
+                }
+                if !bytes.is_empty() {
+                    state.echo_retry = Some(bytes);
+                }
+            }
+        }
+        if state.echo_retry.is_none() && !state.echo_pending.is_empty() {
+            state.echo_retry = Some(core::mem::take(&mut state.echo_pending));
+        }
+        if state.echo_retry.is_some() {
+            let message = Message {
+                operation: SYS_WRITE,
+                ..Message::default()
+            };
+            if let Ok(Some(id)) =
+                ipc::kernel_send_retained(&mut kernel, pid, message, &mut state.echo_retry)
+            {
+                state.echo_request = Some(id);
+            }
+        }
     }
 
     // receive input bytes and apply line policy
@@ -162,7 +278,7 @@ impl TTY {
         input.push(byte);
 
         if termios.c_lflag & ECHO != 0 {
-            self.transport.write(&[byte]);
+            self.uart.lock().echo_pending.push(byte);
         }
 
         let canonical = termios.c_lflag & ICANON != 0;
@@ -210,7 +326,8 @@ impl FileOps for TTY {
             ready |= POLLIN;
         }
 
-        // uart write never blocks so it's always avaliable
+        // No bounded output queue: accepting a write does not promise completion
+        // without sleeping for UART IPC (the same distinction as a blocking fd).
         if events & POLLOUT != 0 {
             ready |= POLLOUT;
         }
@@ -239,9 +356,30 @@ impl FileOps for TTY {
         addr: usize,
         len: usize,
     ) -> Result<usize, Errno> {
+        if len == 0 {
+            return Ok(0);
+        }
         let bytes = copy_in_cont(&mut proc.pagetable, addr, len).map_err(|()| Errno::EFAULT)?;
-        self.transport.write(&bytes);
-        Ok(bytes.len())
+        let pid = self.uart.lock().pid.ok_or(Errno::ENXIO)?;
+        let message = Message {
+            operation: SYS_WRITE,
+            ..Message::default()
+        };
+        let raw = ipc::kernel_call(proc, pid, message, Some(bytes))?;
+        let count = serverlib::error::decode(raw).map_err(|error| match error {
+            serverlib::Error::ENOMEM => Errno::ENOMEM,
+            serverlib::Error::EFAULT => Errno::EFAULT,
+            serverlib::Error::EINVAL => Errno::EINVAL,
+            serverlib::Error::EINTR => Errno::EINTR,
+            serverlib::Error::ESRCH => Errno::ESRCH,
+            serverlib::Error::EPERM => Errno::EPERM,
+            serverlib::Error::ENOSYS => Errno::ENOSYS,
+            _ => Errno::EIO,
+        })?;
+        if count > len {
+            return Err(Errno::EIO);
+        }
+        Ok(count)
     }
 
     fn ioctl(&self, proc: &mut Process, op: usize, arg: usize) -> Result<usize, Errno> {
@@ -261,7 +399,22 @@ impl FileOps for TTY {
             TCSETS => {
                 let termios =
                     copy_in::<Termios>(&mut proc.pagetable, arg).map_err(|()| Errno::EFAULT)?;
-                *self.termios.lock() = termios;
+                let previous = {
+                    let mut current = self.termios.lock();
+                    let previous = *current;
+                    *current = termios;
+                    previous
+                };
+                if (previous.c_lflag ^ termios.c_lflag) & ICANON != 0 {
+                    // Already-buffered bytes can become readable without any
+                    // new UART input. Let sleepers recheck the new line policy.
+                    KERNEL
+                        .get()
+                        .unwrap()
+                        .lock()
+                        .wakeup(Some(self.input_channel()), true);
+                    wake_poll_waiters();
+                }
                 Ok(0)
             }
             TIOCGPGRP => {

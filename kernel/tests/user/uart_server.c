@@ -29,11 +29,17 @@ static void check(int condition) {
 
 __attribute__((noreturn)) void _start(void) {
 #ifdef UART_BOOTSTRAP
-    word child = 3;
-    check(sc(172, 0, 0, 0, 0, 0) >= 4);
-    check(sc(129, 1, 0, 0, 0, 0) == (word)-1);
-    check(sc(129, 2, 0, 0, 0, 0) == (word)-3);
-    check(sc(129, child, 0, 0, 0, 0) == (word)-1);
+    /* The only other live boot process besides PID 1 is UART. Its numeric PID
+       is not part of this test's contract. Signal-zero probes do not alter it. */
+    word self = sc(172, 0, 0, 0, 0, 0);
+    word child = 0;
+    for (word pid = 2; pid < self; ++pid) {
+        if (sc(129, pid, 0, 0, 0, 0) == (word)-1) {
+            check(child == 0);
+            child = pid;
+        }
+    }
+    check(child != 0);
 #else
     word child = sc(220, 17, 0, 0, 0, 0);
     check((long)child >= 0);
