@@ -1,8 +1,4 @@
-use crate::{
-    Result, abi,
-    error::{decode, encode},
-    syscall::syscall,
-};
+use crate::{Error, Result, abi, error::decode};
 
 pub use abi::{KERNEL_SENDER_ID, Message};
 
@@ -12,52 +8,31 @@ pub struct Request {
     pub message: Message,
 }
 
-pub unsafe fn call(destination: usize, message: &Message) -> Result<usize> {
-    decode(unsafe {
-        syscall(
-            abi::SYS_IPC_CALL,
-            [destination, message as *const Message as usize, 0, 0, 0, 0],
-        )
-    })
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Event {
+    Request(Request),
+    Completion { id: usize, result: Result<usize> },
 }
 
-pub fn receive() -> Result<Request> {
-    let mut message = Message::default();
-    let id = decode(unsafe {
-        syscall(
-            abi::SYS_IPC_RECEIVE,
-            [&mut message as *mut Message as usize, 0, 0, 0, 0, 0],
-        )
-    })?;
-    Ok(Request { id, message })
+impl TryFrom<abi::IpcEvent> for Event {
+    type Error = Error;
+
+    fn try_from(event: abi::IpcEvent) -> Result<Self> {
+        match event.kind {
+            abi::IPC_EVENT_REQUEST => Ok(Self::Request(Request {
+                id: event.id,
+                message: event.message,
+            })),
+            abi::IPC_EVENT_COMPLETION => Ok(Self::Completion {
+                id: event.id,
+                result: decode(event.result),
+            }),
+            _ => Err(Error::EINVAL),
+        }
+    }
 }
 
-pub fn read_payload(id: usize, offset: usize, destination: &mut [u8]) -> Result<usize> {
-    decode(unsafe {
-        syscall(
-            abi::SYS_IPC_READ_PAYLOAD,
-            [
-                id,
-                offset,
-                destination.as_mut_ptr() as usize,
-                destination.len(),
-                0,
-                0,
-            ],
-        )
-    })
-}
-
-pub fn reply(id: usize, result: Result<usize>, data: Option<&[u8]>) -> Result<()> {
-    let (source, length) = match data {
-        Some(bytes) => (bytes.as_ptr() as usize, bytes.len()),
-        None => (0, 0),
-    };
-    decode(unsafe {
-        syscall(
-            abi::SYS_IPC_REPLY,
-            [id, encode(result), source, length, 0, 0],
-        )
-    })
-    .map(|_| ())
-}
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+mod transport;
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+pub use transport::*;

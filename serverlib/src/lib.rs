@@ -16,10 +16,7 @@ pub mod runtime;
 pub use error::{Error, Result};
 pub use runtime::Args;
 
-#[cfg(all(
-    feature = "userspace",
-    any(target_arch = "riscv32", target_arch = "riscv64")
-))]
+#[cfg(feature = "userspace")]
 pub mod ipc;
 
 #[cfg(all(
