@@ -40,6 +40,18 @@ fn run(args: Args) -> ! {
     assert!(!args.is_empty());
     assert!(args.get(args.len()).is_none());
     match args.get(1).map(|s| s.to_bytes()) {
+        Some(b"async") => test_async(),
+        Some(b"async-exec") => test_async_exec(),
+        Some(b"async-cross") => test_async_cross(),
+        Some(b"after-cross-exec") => {
+            control(args.parse_usize(2).unwrap());
+            syscall::exit(0)
+        }
+        Some(b"after-async-exec") => {
+            assert_eq!(ipc::cancel(args.parse_usize(2).unwrap()), Err(Error::ESRCH));
+            test_async()
+        }
+        Some(b"async-interrupt") => test_async_interrupt(),
         Some(b"heap") => test_heap(),
         Some(b"ipc-server") => ipc_server(),
         Some(b"ipc-client") => ipc_client(args.parse_usize(2).unwrap()),
@@ -65,6 +77,187 @@ fn run(args: Args) -> ! {
         Err(Error::EOVERFLOW) => syscall::exit(EXIT_USAGE),
         _ => syscall::exit(EXIT_USAGE),
     }
+}
+
+fn self_request(id: usize) {
+    match ipc::receive_event().unwrap() {
+        ipc::Event::Request(request) => assert_eq!(request.id, id),
+        _ => panic!("expected request"),
+    }
+}
+
+fn test_async() -> ! {
+    let pid = syscall::getpid().unwrap();
+    let mut bytes = *b"abcdefgh";
+    let message = Message { operation: ECHO, args: [0, bytes.as_mut_ptr() as usize, bytes.len(), 0, 0, 0], ..Message::default() };
+    let cancelled = unsafe { ipc::submit(pid, &message) }.unwrap();
+    ipc::cancel(cancelled).unwrap();
+    let id = unsafe { ipc::submit(pid, &message) }.unwrap();
+    self_request(id);
+    let mut copy = [0; 8];
+    assert_eq!(ipc::read_payload(id, 0, &mut copy), Ok(8));
+    assert_eq!(&copy, b"abcdefgh");
+    ipc::cancel(id).unwrap();
+    assert_eq!(ipc::read_payload(id, 0, &mut copy), Err(Error::ESRCH));
+    ipc::reply(id, Ok(4), Some(b"late")).unwrap();
+    let fresh = unsafe { ipc::submit(pid, &message) }.unwrap();
+    self_request(fresh);
+    ipc::reply(id, Ok(4), Some(b"late")).unwrap();
+    ipc::reply(fresh, Ok(4), Some(b"done")).unwrap();
+    let raw = unsafe { syscall::syscall(serverlib::abi::SYS_IPC_RECEIVE_EVENT, [usize::MAX, 0, 0, 0, 0, 0]) };
+    assert_eq!(raw, Error::EFAULT.into_raw());
+    assert_eq!(ipc::receive_event(), Ok(ipc::Event::Completion { id: fresh, result: Ok(4) }));
+    assert_eq!(&bytes, b"doneefgh"); // Neither stale reply wrote "late".
+    assert_eq!(ipc::cancel(fresh), Err(Error::ESRCH));
+    let id = unsafe { ipc::submit(pid, &message) }.unwrap();
+    self_request(id);
+    ipc::reply(id, Ok(0), None).unwrap();
+    ipc::cancel(id).unwrap(); // Completed but not yet consumed.
+    let missing = unsafe { ipc::submit(usize::MAX, &message) }.unwrap();
+    ipc::cancel(missing).unwrap();
+    let first = unsafe { ipc::submit(pid, &Message::default()) }.unwrap();
+    let second = unsafe { ipc::submit(pid, &Message::default()) }.unwrap();
+    self_request(first);
+    self_request(second);
+    ipc::cancel(first).unwrap();
+    ipc::reply(first, Ok(0), None).unwrap();
+    ipc::reply(second, Err(Error::EINTR), None).unwrap();
+    assert_eq!(ipc::receive_event(), Ok(ipc::Event::Completion {
+        id: second, result: Err(Error::EINTR),
+    }));
+
+    // Child exit must remove its request from our inbox before its memory dies.
+    let child = unsafe { syscall::syscall(220, [17, 0, 0, 0, 0, 0]) };
+    assert!((child as isize) >= 0);
+    if child == 0 {
+        unsafe { ipc::submit(pid, &message) }.unwrap();
+        syscall::exit(0);
+    }
+    let mut info = [0usize; 32];
+    assert_eq!(unsafe { syscall::syscall(95, [0, 0, info.as_mut_ptr() as usize, 4, 0, 0]) }, 0);
+    let id = unsafe { ipc::submit(pid, &message) }.unwrap();
+    self_request(id);
+    ipc::cancel(id).unwrap();
+    syscall::write(1, b"ASYNC_OK\n").unwrap();
+    syscall::exit(0)
+}
+
+fn test_async_exec() -> ! {
+    let pid = syscall::getpid().unwrap();
+    let id = unsafe { ipc::submit(pid, &Message::default()) }.unwrap();
+    let bad_argv = [c"/lorem.txt".as_ptr() as usize, 0];
+    let raw = unsafe { syscall::syscall(221, [bad_argv[0], bad_argv.as_ptr() as usize, 0, 0, 0, 0]) };
+    assert_eq!(raw, Error::from_code(8).unwrap().into_raw());
+    ipc::cancel(id).unwrap(); // Failed exec must not cancel it.
+    let id = unsafe { ipc::submit(pid, &Message::default()) }.unwrap();
+    let text = alloc::ffi::CString::new(alloc::format!("{id}")).unwrap();
+    let argv = [c"/runtime-test".as_ptr(), c"after-async-exec".as_ptr(), text.as_ptr(), core::ptr::null()];
+    unsafe { syscall::syscall(221, [argv[0] as usize, argv.as_ptr() as usize, 0, 0, 0, 0]) };
+    panic!("exec returned")
+}
+
+// External syscall regression only: parent and child synchronize through real
+// blocking IPC, keeping buffers owned until completion/cancellation.
+fn control(parent: usize) {
+    assert_eq!(unsafe { ipc::call(parent, &Message::default()) }, Ok(0));
+}
+
+fn incoming() -> ipc::Request {
+    match ipc::receive_event().unwrap() {
+        ipc::Event::Request(request) => request,
+        _ => panic!("expected incoming request"),
+    }
+}
+
+fn pause() {
+    let duration = [0i64, 100_000_000];
+    assert_eq!(unsafe { syscall::syscall(407, [0, 0, duration.as_ptr() as usize, 0, 0, 0]) }, 0);
+}
+
+fn test_async_cross() -> ! {
+    let parent = syscall::getpid().unwrap();
+    let child = unsafe { syscall::syscall(220, [17, 0, 0, 0, 0, 0]) };
+    assert!((child as isize) >= 0);
+    if child == 0 {
+        let mut bytes = *b"abcdefgh";
+        let message = Message {
+            operation: ECHO,
+            args: [0, bytes.as_mut_ptr() as usize, bytes.len(), 0, 0, 0],
+            ..Message::default()
+        };
+        let id = unsafe { ipc::submit(parent, &message) }.unwrap();
+        assert_eq!(ipc::receive_event(), Ok(ipc::Event::Completion { id, result: Ok(4) }));
+        assert_eq!(&bytes, b"doneefgh");
+
+        let id = unsafe { ipc::submit(parent, &message) }.unwrap();
+        control(parent); // Parent has delivered the submission.
+        ipc::cancel(id).unwrap();
+        control(parent); // Parent now attempts stale access before acknowledging.
+        assert_eq!(&bytes, b"doneefgh");
+
+        unsafe { ipc::submit(parent, &message) }.unwrap();
+        control(parent);
+        let text = alloc::ffi::CString::new(alloc::format!("{parent}")).unwrap();
+        let argv = [c"/runtime-test".as_ptr(), c"after-cross-exec".as_ptr(), text.as_ptr(), core::ptr::null()];
+        unsafe { syscall::syscall(221, [argv[0] as usize, argv.as_ptr() as usize, 0, 0, 0, 0]) };
+        panic!("exec returned")
+    }
+    let request = incoming();
+    assert_eq!(request.message.sender, child);
+    let mut copy = [0; 8];
+    assert_eq!(ipc::read_payload(request.id, 0, &mut copy), Ok(8));
+    assert_eq!(&copy, b"abcdefgh");
+    pause(); // Let the child block in event receive before completing.
+    ipc::reply(request.id, Ok(4), Some(b"done")).unwrap();
+    for _ in 0..2 { // Delivered cancellation, then delivered successful exec.
+        let abandoned = incoming();
+        let handshake = incoming();
+        ipc::reply(handshake.id, Ok(0), None).unwrap();
+        let finished = incoming();
+        assert_eq!(ipc::read_payload(abandoned.id, 0, &mut copy), Err(Error::ESRCH));
+        ipc::reply(abandoned.id, Ok(4), Some(b"late")).unwrap();
+        ipc::reply(finished.id, Ok(0), None).unwrap();
+    }
+    let mut info = [0usize; 32];
+    assert_eq!(unsafe { syscall::syscall(95, [0, 0, info.as_mut_ptr() as usize, 4, 0, 0]) }, 0);
+
+    let child = unsafe { syscall::syscall(220, [17, 0, 0, 0, 0, 0]) };
+    assert!((child as isize) >= 0);
+    if child == 0 {
+        let bytes = *b"exitdata";
+        let message = Message { operation: ECHO, args: [0, bytes.as_ptr() as usize, 8, 0, 0, 0], ..Message::default() };
+        unsafe { ipc::submit(parent, &message) }.unwrap();
+        control(parent);
+        syscall::exit(0)
+    }
+    let abandoned = incoming();
+    let handshake = incoming();
+    ipc::reply(handshake.id, Ok(0), None).unwrap();
+    assert_eq!(unsafe { syscall::syscall(95, [0, 0, info.as_mut_ptr() as usize, 4, 0, 0]) }, 0);
+    assert_eq!(ipc::read_payload(abandoned.id, 0, &mut copy), Err(Error::ESRCH));
+    ipc::reply(abandoned.id, Ok(4), Some(b"late")).unwrap();
+    syscall::write(1, b"ASYNC_CROSS_OK\n").unwrap();
+    syscall::exit(0)
+}
+
+extern "C" fn interrupted(_: usize) {}
+
+#[unsafe(naked)]
+unsafe extern "C" fn restore_signal() -> ! {
+    core::arch::naked_asm!("li a7, 139", "ecall", "unimp");
+}
+
+fn test_async_interrupt() -> ! {
+    let action = [interrupted as *const () as usize, 0, restore_signal as *const () as usize, 0, 0];
+    assert_eq!(unsafe { syscall::syscall(134, [2, action.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
+    let mask = [0usize; 2];
+    assert_eq!(unsafe { syscall::syscall(135, [2, mask.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
+    let id = unsafe { ipc::submit(usize::MAX, &Message::default()) }.unwrap();
+    syscall::write(1, b"ASYNC_WAIT\n").unwrap();
+    assert_eq!(ipc::receive_event(), Err(Error::EINTR));
+    ipc::cancel(id).unwrap(); // Interrupted receive did not release the operation.
+    syscall::write(1, b"ASYNC_INTR_OK\n").unwrap();
+    syscall::exit(0)
 }
 
 fn test_heap() -> ! {

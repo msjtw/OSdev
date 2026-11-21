@@ -25,6 +25,32 @@ pub fn sys_ipc_receive(proc: &mut Process) {
     };
 }
 
+pub fn sys_ipc_cancel(proc: &mut Process) {
+    let mut kernel = crate::KERNEL.get().unwrap().lock();
+    proc.trapframe.a0 = match ipc::cancel_outgoing(&mut kernel, proc, proc.trapframe.a0) {
+        Ok(()) => 0,
+        Err(error) => error.into(),
+    };
+}
+
+pub fn sys_ipc_submit(proc: &mut Process) {
+    let destination = proc.trapframe.a0;
+    let result = copy_in::<Message>(&mut proc.pagetable, proc.trapframe.a1)
+        .map_err(|_| Errno::EFAULT)
+        .and_then(|message| ipc::user_submit(proc, destination, message));
+    proc.trapframe.a0 = match result {
+        Ok(id) => id,
+        Err(error) => error.into(),
+    };
+}
+
+pub fn sys_ipc_receive_event(proc: &mut Process) {
+    proc.trapframe.a0 = match ipc::serv_receive_event(proc, proc.trapframe.a0) {
+        Ok(()) => 0,
+        Err(error) => error.into(),
+    };
+}
+
 pub fn sys_ipc_reply(proc: &mut Process) {
     proc.trapframe.a0 = match ipc::serv_reply(
         proc,

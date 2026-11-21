@@ -1,6 +1,7 @@
 """Exercise common startup, arguments, gp initialization, and panic dispatch."""
 
 import os
+import re
 import shutil
 import subprocess
 
@@ -43,6 +44,15 @@ def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_siz
     try:
         session.start()
         session.boot()
+        assert session.run("/runtime-test async", timeout=15).status == 0
+        assert session.run("/runtime-test async-exec", timeout=15).status == 0
+        result = session.run("/runtime-test async-cross", timeout=15)
+        assert result.status == 0, result.output
+        assert "ASYNC_CROSS_OK" in result.output
+        session._send("/runtime-test async-interrupt\n")
+        session._wait_for_match(re.compile(rb"(?m)^ASYNC_WAIT\r?$"), 5)
+        session._send("\x03")
+        session._wait_for_match(re.compile(rb"(?m)^ASYNC_INTR_OK\r?$"), 5)
         for value in ["268435456", "0x10000000", "0X10000000"]:
             result = session.run(f"/runtime-test {value}")
             assert result.status == 0, result.output

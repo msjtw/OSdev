@@ -192,7 +192,7 @@ pub struct Process {
     pub blocked_signals: u64,
     pub signal_actions: [signals::SigAction; signals::SIGNAL_COUNT],
 
-    pub ipc: ipc::IpcQueue,
+    pub ipc: ipc::IpcState,
 
     // Linux leaves slots after close, so a table entry becomes None while its
     // index remains a valid descriptor number for later reuse.
@@ -219,7 +219,7 @@ impl Process {
             pending_signals: 0,
             blocked_signals: 0,
             signal_actions: [signals::SigAction::default(); signals::SIGNAL_COUNT],
-            ipc: ipc::IpcQueue::default(),
+            ipc: ipc::IpcState::default(),
             trapframe: Box::new_in(Trapframe::default(), &FRAME_ALLOCATOR),
             lock: IntMutex::new(()),
             quants: 0,
@@ -229,7 +229,8 @@ impl Process {
     }
 
     pub fn free(&mut self) -> Result<(), ()> {
-        self.ipc = ipc::IpcQueue::default();
+        assert!(self.ipc.outbox.is_empty(), "process freed before IPC cleanup");
+        self.ipc = ipc::IpcState::default();
         self.pid = None;
         self.pgid = None;
         self.sid = None;
@@ -485,6 +486,11 @@ impl Process {
         sp -= word_size;
         copy_out(&mut pagetree, sp, argc).map_err(|_| Errno::E2BIG)?;
 
+        // clean old ipc submissions
+        if !self.ipc.outbox.is_empty() {
+            let mut kernel = KERNEL.get().unwrap().lock();
+            ipc::cancel_outbox(&mut kernel, self);
+        }
         self.pagetable = pagetree;
         self.pagetable.heap_base = heap_base;
         self.pagetable.prog_break = heap_base;
@@ -525,6 +531,7 @@ impl Process {
         {
             let mut kernel = KERNEL.get().unwrap().lock();
             ipc::cancel_call(&mut kernel, self);
+            ipc::cancel_outbox(&mut kernel, self);
         }
 
         // Close before taking exit locks

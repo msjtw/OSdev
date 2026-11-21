@@ -83,7 +83,7 @@ impl Kernel {
         for p in &mut self.process_table {
             if p.state == ProcState::Unused {
                 let pid = self.pid.next()?;
-                p.ipc = crate::process::ipc::IpcQueue::default();
+                p.ipc = crate::process::ipc::IpcState::default();
                 p.pid = Some(pid);
                 p.pgid = p.pid;
                 p.state = ProcState::Used;
