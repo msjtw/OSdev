@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 IMAGE=${1:-"$ROOT/build/rootfs.ext4"}
-BUSYBOX_DIR=${BUSYBOX_DIR:-"$ROOT/../busybox-1.35.0"}
+BUSYBOX_DIR=${BUSYBOX_DIR:-"$ROOT/../busybox-1.38.0"}
 UART_DRIVER_BIN=${UART_DRIVER_BIN:-}
 
 if [ ! -f "$BUSYBOX_DIR/Makefile" ]; then
