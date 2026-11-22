@@ -12,7 +12,7 @@ from qemu_harness import QemuSession
 
 
 @pytest.mark.qemu
-@pytest.mark.parametrize("case", [1, 2, 3, 4], ids=["modes", "mode-wakes-poll", "mode-wakes-read", "concurrent-clients"])
+@pytest.mark.parametrize("case", [1, 2, 3, 4, 5], ids=["modes", "mode-wakes-poll", "mode-wakes-read", "concurrent-clients", "settings-ack-readiness"])
 def test_uart_tty_semantics(case, tmp_path, kernel_binary, rootfs_image, request):
     obj = tmp_path / "tty-semantics.o"
     binary = tmp_path / "tty-semantics"
@@ -41,7 +41,10 @@ def test_uart_tty_semantics(case, tmp_path, kernel_binary, rootfs_image, request
         session.start()
         session.boot()
         session._send("/tty-semantics\n")
-        if case == 4:
+        if case == 5:
+            session._wait_for_match(re.compile(rb"(?m)^IPC032_INPUT_WAIT\r?$"), 10)
+            session._send("mode")
+        elif case == 4:
             session._wait_for_match(re.compile(rb"(?m)^IPC030_CONCURRENT_WAIT\r?$"), 10)
             session._send("parallel\n")
         elif case == 1:

@@ -57,8 +57,11 @@ def test_tty_write_completion_errors_and_recovery(tmp_path, kernel_binary, rootf
 
 
 def test_async_echo_wakes_reader_and_keeps_exact_bytes(qemu):
+    # Exercise the fresh VM's default canonical/echo settings. Explicit mode
+    # changes and restoration are covered through checked TCSETS/TCGETS in
+    # tty_semantics.c; BusyBox stty requires unsupported TCSETSW.
     for index in range(4):
-        qemu._send("stty icanon echo; printf 'IPC021_ECHO_WAIT\\n'; "
+        qemu._send("printf 'IPC021_ECHO_WAIT\\n'; "
                    "read line; printf 'IPC021_ECHO_DONE:%s\\n' \"$line\"\n")
         qemu._wait_for_match(re.compile(rb"(?m)^IPC021_ECHO_WAIT\r?$"), 5)
         time.sleep(0.2)

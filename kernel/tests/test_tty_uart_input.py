@@ -22,8 +22,11 @@ def test_uart_input_progress_after_idle_empty_reads(qemu):
 @pytest.mark.parametrize("payload,ending", [("awake", "\r"), ("0123456789" * 80, "\n")],
                          ids=["cr-to-newline", "larger-than-poll-batch"])
 def test_uart_input_wakes_canonical_reader(qemu, payload, ending):
+    # Fresh VM: canonical input and ICRNL are boot defaults. This test does
+    # not require echo to be disabled; explicit settings use checked TCSETS
+    # in tty_semantics.c, not BusyBox stty's unsupported TCSETSW.
     qemu._send(
-        "stty icanon -echo; printf 'IPC020_WAITING\\n'; "
+        "printf 'IPC020_WAITING\\n'; "
         "read line; printf 'IPC020_INPUT:%s\\n' \"$line\"\n"
     )
     qemu._wait_for_match(re.compile(rb"(?m)^IPC020_WAITING\r?$"), 5)

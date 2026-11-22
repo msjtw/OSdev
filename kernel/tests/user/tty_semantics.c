@@ -67,7 +67,16 @@ __attribute__((noreturn)) void _start(void) {
     mode.lflag = (mode.lflag | 3) & ~010; /* ISIG | ICANON, no ECHO */
     set_mode();
 
-#if CASE == 4
+#if CASE == 5
+    SAY("IPC032_INPUT_WAIT\n");
+    check(poll_tty(1, 300, 0) == 0);
+    mode.lflag &= ~2;
+    set_mode();
+    /* No settling delay or new input between TCSETS and this readiness check. */
+    check(poll_tty(1, 0, 1) == 1);
+    read_exact(4);
+    check(bytes[0] == 'm' && bytes[1] == 'o' && bytes[2] == 'd' && bytes[3] == 'e');
+#elif CASE == 4
     int pipefd[2];
     check(sc(59, (word)pipefd, 0, 0, 0, 0) == 0);
     word child = sc(220, 17, 0, 0, 0, 0);
@@ -86,8 +95,9 @@ __attribute__((noreturn)) void _start(void) {
     check(sc(57, pipefd[1], 0, 0, 0, 0) == 0);
     char status;
     check(sc(63, pipefd[0], (word)&status, 1, 0, 0) == 1 && status == 'R');
-    /* Allow the child to enter read; do not send UART input until parent I/O
-       and settings operations have completed. The pipe must remain empty. */
+    /* End-to-end smoke coverage: this settling delay does not prove the exact
+       enqueue point. Deterministic retention/ordering lives in the TTY host
+       component tests. No UART input until parent I/O/settings have completed. */
     struct Timespec delay = {0, 300000000};
     check(sc(414, 0, 0, (word)&delay, 0, 0) == 0);
     struct PollFd pending = {pipefd[0], 1, -1};

@@ -11,3 +11,9 @@ toolchain, target, profile, linker flags (including heap size), features and pyt
 worker. Cargo still checks source changes on every build. Test images and QEMU
 processes remain isolated; this does not promise safe parallel suite execution.
 Independent pytest invocations sharing a checkout should not run concurrently.
+
+The QEMU concurrent-client case is a real-descriptor smoke test: its pipe
+announcement and settling delay do not establish the exact TTY read-enqueue point.
+`tty_driver/tests/concurrent.rs` deterministically checks retained reads alongside
+writes/settings using actual components and IPC callbacks, without sleeps. Those
+host tests do not exercise Linux descriptor dispatch or the executable event loop.

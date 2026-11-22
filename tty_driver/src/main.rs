@@ -55,10 +55,11 @@ fn run(args: Args) -> ! {
             }
         }
         let mut retry_output = true;
+        let mut settings_reply = None;
         match ipc::receive_event() {
             Ok(ipc::Event::Request(request)) => {
                 retry_input = true;
-                handle_request(&mut terminal, &mut reads, &mut uart, request)
+                settings_reply = handle_request(&mut terminal, &mut reads, &mut uart, request);
             }
             Ok(ipc::Event::Completion { id, result }) => {
                 retry_output =
@@ -97,7 +98,8 @@ fn run(args: Args) -> ! {
             syscall::exit(runtime::EXIT_FAILURE);
         }
         if readiness
-            .publish(&terminal, tty::publish_readiness)
+            .publish_then_ack(&terminal, settings_reply, tty::publish_readiness,
+                |id| ipc::reply(id, Ok(0), None))
             .is_err()
         {
             syscall::exit(runtime::EXIT_FAILURE);
@@ -121,14 +123,16 @@ fn handle_request(
     reads: &mut PendingReads,
     uart: &mut UartTransfers,
     request: ipc::Request,
-) {
-    if let Err(error) = dispatch(terminal, reads, uart, request) {
+) -> Option<usize> {
+    let mut settings_reply = None;
+    if let Err(error) = dispatch(terminal, reads, uart, request, &mut settings_reply) {
         if ipc::reply(request.id, Err(error), None).is_ok() {
-            return;
+            return None;
         }
         syscall::exit(runtime::EXIT_FAILURE);
     }
     // The main loop completes reads and publishes final readiness after this event.
+    settings_reply
 }
 
 /// Dispatch client I/O and terminal ioctls without blocking the event loop.
@@ -137,6 +141,7 @@ fn dispatch(
     reads: &mut PendingReads,
     uart: &mut UartTransfers,
     request: ipc::Request,
+    settings_reply: &mut Option<usize>,
 ) -> Result<()> {
     let message = request.message;
     if matches!(message.operation, SYS_READ | SYS_WRITE) && message.args[2] == 0 {
@@ -160,7 +165,8 @@ fn dispatch(
             let mut bytes = [0; tty::Termios::SIZE];
             ipc::read_payload(request.id, 0, &mut bytes)?;
             terminal.set_termios(tty::Termios::from_bytes(&bytes)?);
-            ipc::reply(request.id, Ok(0), None)
+            *settings_reply = Some(request.id);
+            Ok(())
         }
         tty::TIOCGWINSZ => {
             let mut bytes = [0; 8];

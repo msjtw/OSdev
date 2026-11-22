@@ -58,16 +58,16 @@ fn call(
             ..Message::default()
         },
     )?;
-    serverlib::error::decode(raw).map_err(|error| match error.code() {
-        1 => Errno::EPERM,
-        3 => Errno::ESRCH,
-        4 => Errno::EINTR,
-        11 => Errno::EAGAIN,
-        12 => Errno::ENOMEM,
-        14 => Errno::EFAULT,
-        22 => Errno::EINVAL,
-        25 => Errno::ENOTTY,
-        38 => Errno::ENOSYS,
+    serverlib::error::decode(raw).map_err(|error| match error {
+        serverlib::Error::EPERM => Errno::EPERM,
+        serverlib::Error::ESRCH => Errno::ESRCH,
+        serverlib::Error::EINTR => Errno::EINTR,
+        serverlib::Error::EAGAIN => Errno::EAGAIN,
+        serverlib::Error::ENOMEM => Errno::ENOMEM,
+        serverlib::Error::EFAULT => Errno::EFAULT,
+        serverlib::Error::EINVAL => Errno::EINVAL,
+        serverlib::Error::ENOTTY => Errno::ENOTTY,
+        serverlib::Error::ENOSYS => Errno::ENOSYS,
         _ => Errno::EIO,
     })
 }
