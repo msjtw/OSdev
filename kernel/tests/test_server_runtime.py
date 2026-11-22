@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 
 import pytest
 
@@ -13,7 +14,7 @@ from qemu_harness import QemuSession
 
 @pytest.mark.qemu
 @pytest.mark.parametrize("heap_size,profile", [(4096, "debug"), (16384, "release")])
-def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_size, profile):
+def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_size, profile, server_target_dir):
     target = "riscv32ima-unknown-none-elf"
     env = dict(os.environ)
     script = ROOT.parent / "serverlib/linker/server.ld"
@@ -24,12 +25,13 @@ def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_siz
     image = tmp_path / "rootfs.ext4"
     shutil.copy2(rootfs_image, image)
     for name, features in [("runtime-test", []), ("runtime-custom", ["--features", "custom-panic"])]:
+        target_dir = server_target_dir(target, profile, env["RUSTFLAGS"], features)
         subprocess.run([
             "cargo", "+nightly", "build", "--target", target, "-Z", "build-std=core,alloc",
-            "--target-dir", str(tmp_path / "target"), *features,
+            "--target-dir", str(target_dir), *features,
             *(["--release"] if profile == "release" else []),
         ], cwd=ROOT / "tests/user/server_runtime", env=env, check=True)
-        binary = tmp_path / "target" / target / profile / "server-runtime-test"
+        binary = target_dir / target / profile / "server-runtime-test"
         installed = subprocess.run([
             "debugfs", "-w", "-R", f"write {binary} /{name}", str(image),
         ], capture_output=True, text=True, check=True)
@@ -49,10 +51,6 @@ def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_siz
         result = session.run("/runtime-test async-cross", timeout=15)
         assert result.status == 0, result.output
         assert "ASYNC_CROSS_OK" in result.output
-        session._send("/runtime-test async-interrupt\n")
-        session._wait_for_match(re.compile(rb"(?m)^ASYNC_WAIT\r?$"), 5)
-        session._send("\x03")
-        session._wait_for_match(re.compile(rb"(?m)^ASYNC_INTR_OK\r?$"), 5)
         for value in ["268435456", "0x10000000", "0X10000000"]:
             result = session.run(f"/runtime-test {value}")
             assert result.status == 0, result.output
@@ -69,6 +67,27 @@ def test_server_runtime(tmp_path, kernel_binary, rootfs_image, request, heap_siz
         assert session.run("/runtime-test oom").status == 1
         assert session.run("/runtime-custom oom").status == 1
         assert session.run("/bin/true").status == 0
+        # Last in this VM: a final in-flight Ctrl-C must not affect another
+        # shell command. READY output alone does not prove receive has started.
+        session._send("/runtime-test async-interrupt\n")
+        session._wait_for_match(re.compile(rb"(?m)^ASYNC_WAIT\r?$"), 10)
+        stop = threading.Event()
+
+        def interrupt():
+            for _ in range(50):
+                if stop.is_set():
+                    break
+                session._send("\x03")
+                if stop.wait(0.2):
+                    break
+
+        sender = threading.Thread(target=interrupt, daemon=True)
+        sender.start()
+        try:
+            session._wait_for_match(re.compile(rb"(?m)^ASYNC_INTR_OK\r?$"), 15)
+        finally:
+            stop.set()
+            sender.join()
     except Exception:
         session.close()
         session.save_artifacts(ROOT / "build/test-artifacts", "server-runtime")

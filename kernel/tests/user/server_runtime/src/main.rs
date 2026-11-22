@@ -253,8 +253,14 @@ fn test_async_interrupt() -> ! {
     let mask = [0usize; 2];
     assert_eq!(unsafe { syscall::syscall(135, [2, mask.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
     let id = unsafe { ipc::submit(usize::MAX, &Message::default()) }.unwrap();
+    let blocked = [2usize, 0]; // Keep readiness output from being interrupted.
+    assert_eq!(unsafe { syscall::syscall(135, [0, blocked.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
     syscall::write(1, b"ASYNC_WAIT\n").unwrap();
+    // An early signal may run its handler here. The host sends bounded retries
+    // until a signal genuinely interrupts receive_event below.
+    assert_eq!(unsafe { syscall::syscall(135, [2, mask.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
     assert_eq!(ipc::receive_event(), Err(Error::EINTR));
+    assert_eq!(unsafe { syscall::syscall(135, [0, blocked.as_ptr() as usize, 0, 8, 0, 0]) }, 0);
     ipc::cancel(id).unwrap(); // Interrupted receive did not release the operation.
     syscall::write(1, b"ASYNC_INTR_OK\n").unwrap();
     syscall::exit(0)

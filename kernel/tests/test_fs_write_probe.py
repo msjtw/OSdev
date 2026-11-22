@@ -10,7 +10,7 @@ from conftest import ROOT
 from qemu_harness import QemuSession
 
 
-@pytest.mark.skip
+@pytest.mark.skip(reason="ext4 write support is not implemented; deferred until a future milestone")
 @pytest.mark.qemu
 def test_ext4_write_probe(tmp_path, request):
     for tool in ("mkfs.ext4", "debugfs", "dumpe2fs", "e2fsck"):

@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import hashlib
+import json
 
 import pytest
 
@@ -11,11 +13,16 @@ from qemu_harness import QemuSession
 
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL_BINARY = ROOT / "target/riscv32ima-unknown-none-elf/debug/main"
 BASE_IMAGE = ROOT / "build/rootfs.ext4"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--rootfs-image", type=Path, default=None,
+                     help="base rootfs image to copy for each guest")
+    parser.addoption(
+        "--kernel-profile", choices=("debug", "release"), default="debug",
+        help="kernel build profile (release is faster for full regression runs)",
+    )
     parser.addoption(
         "--qemu-boot-timeout",
         type=float,
@@ -31,18 +38,39 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(scope="session")
-def kernel_binary() -> Path:
-    subprocess.run(["cargo", "build"], cwd=ROOT, check=True)
-    if not KERNEL_BINARY.is_file():
-        raise RuntimeError(f"Cargo did not produce {KERNEL_BINARY}")
-    return KERNEL_BINARY
+def kernel_binary(request) -> Path:
+    profile = request.config.getoption("--kernel-profile")
+    subprocess.run(["cargo", "build", *(["--release"] if profile == "release" else [])],
+                   cwd=ROOT, check=True)
+    binary = ROOT / "target/riscv32ima-unknown-none-elf" / profile / "main"
+    if not binary.is_file():
+        raise RuntimeError(f"Cargo did not produce {binary}")
+    return binary
 
 
 @pytest.fixture(scope="session")
-def rootfs_image() -> Path:
-    if not BASE_IMAGE.is_file():
-        subprocess.run([ROOT / "mkrootfs.sh", BASE_IMAGE], cwd=ROOT, check=True)
-    return BASE_IMAGE
+def server_target_dir(request):
+    """Reuse Cargo artifacts, separating linker/features/profile and worker variants."""
+    toolchain = subprocess.check_output(["rustc", "+nightly", "-vV"], text=True)
+    worker = getattr(request.config, "workerinput", {}).get("workerid", "serial")
+
+    def directory(target, profile, rustflags, features=()):
+        configuration = json.dumps(
+            [toolchain, target, profile, rustflags, list(features)], sort_keys=True,
+        )
+        key = hashlib.sha256(configuration.encode()).hexdigest()[:20]
+        return ROOT / "build/test-targets" / worker / key
+
+    return directory
+
+
+@pytest.fixture(scope="session")
+def rootfs_image(request) -> Path:
+    image = request.config.getoption("--rootfs-image") or BASE_IMAGE
+    image = image.resolve()
+    if not image.is_file():
+        subprocess.run([ROOT / "mkrootfs.sh", image], cwd=ROOT, check=True)
+    return image
 
 
 @pytest.fixture

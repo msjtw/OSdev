@@ -44,7 +44,9 @@ def test_uart_demo_on_fresh_busybox_only_rootfs(tmp_path, kernel_binary, request
         assert re.search(r"(?m)^IPC030_FD_OK\r?$", result.output)
         assert re.search(r"(?m)^IPC030_STDERR_OK\r?$", result.output)
 
-        session._send("stty icanon -echo; printf 'IPC030_INPUT_WAIT\\n'; "
+        # Canonical input is the boot default. BusyBox stty uses unsupported
+        # TCSETSW/TCSADRAIN; direct TCSETS coverage lives in tty_semantics.
+        session._send("printf 'IPC030_INPUT_WAIT\\n'; "
                       "read line; printf 'IPC030_INPUT:%s\\n' \"$line\"\n")
         session._wait_for_match(re.compile(rb"(?m)^IPC030_INPUT_WAIT\r?$"), 5)
         payload = "fresh-0123456789" * 40
@@ -55,7 +57,6 @@ def test_uart_demo_on_fresh_busybox_only_rootfs(tmp_path, kernel_binary, request
         session._send("yes IPC030_STREAM\n")
         session._wait_for_match(re.compile(rb"(?m)^IPC030_STREAM\r?$"), 5)
         session._send("\x03")
-        session._wait_for(b"/ #", 10)
         result = session.run("printf 'IPC030_DEMO_OK\\n'")
         assert result.status == 0, result.output
         assert re.search(r"(?m)^IPC030_DEMO_OK\r?$", result.output)

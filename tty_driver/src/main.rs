@@ -45,22 +45,38 @@ fn run(args: Args) -> ! {
     {
         syscall::exit(runtime::EXIT_FAILURE);
     }
+    let mut retry_input = true;
     loop {
+        // Only the boot-assigned terminal owns automatic hardware input.
+        if retry_input && terminal.session_id.is_some() {
+            match uart.start_input(|pid, message| unsafe { ipc::submit(pid, message) }) {
+                Ok(()) | Err(Error::ENOMEM) => {}
+                Err(_) => syscall::exit(runtime::EXIT_FAILURE),
+            }
+        }
         let mut retry_output = true;
         match ipc::receive_event() {
             Ok(ipc::Event::Request(request)) => {
+                retry_input = true;
                 handle_request(&mut terminal, &mut reads, &mut uart, request)
             }
             Ok(ipc::Event::Completion { id, result }) => {
                 retry_output =
                     match uart.complete(id, result, |id, result| ipc::reply(id, result, None)) {
-                        Ok(CompletionAction::PumpOutput) => true,
-                        Ok(CompletionAction::WaitForEvent) => false,
+                        Ok(CompletionAction::PumpOutput) => {
+                            retry_input = true;
+                            true
+                        }
+                        Ok(CompletionAction::WaitForEvent) => {
+                            retry_input = true;
+                            false
+                        }
                         Ok(CompletionAction::InputFailed(error)) => {
+                            retry_input = false;
                             if reads.fail(error, ipc::reply).is_err() {
                                 syscall::exit(runtime::EXIT_FAILURE);
                             }
-                            // Future input activation retries on a subsequent event, not this error.
+                            // Retry only after another client/output event, not this error.
                             false
                         }
                         Err(_) => syscall::exit(runtime::EXIT_FAILURE),
@@ -69,7 +85,6 @@ fn run(args: Args) -> ! {
             Err(Error::EINTR) => continue,
             Err(_) => syscall::exit(runtime::EXIT_FAILURE),
         }
-        // Input startup/rearming stays inactive until TTY-020.
         let effects =
             match tty_driver::progress::input(&mut uart, &mut terminal, &mut reads, ipc::reply) {
                 Ok(effects) => effects,

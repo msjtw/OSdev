@@ -11,7 +11,7 @@ from qemu_harness import QemuSession
 
 
 @pytest.mark.qemu
-def test_serverlib_syscalls(tmp_path, kernel_binary, rootfs_image, request):
+def test_serverlib_syscalls(tmp_path, kernel_binary, rootfs_image, request, server_target_dir):
     program = ROOT / "tests/user/server_runtime"
     target = "riscv32ima-unknown-none-elf"
     env = dict(os.environ)
@@ -20,11 +20,12 @@ def test_serverlib_syscalls(tmp_path, kernel_binary, rootfs_image, request):
         f"-C link-arg=-T{script} -C link-arg=--defsym=SERVER_HEAP_SIZE=4096 "
         "-C link-arg=--no-relax"
     )
+    target_dir = server_target_dir(target, "debug", env["RUSTFLAGS"])
     subprocess.run([
         "cargo", "+nightly", "build", "--target", target,
-        "-Z", "build-std=core,alloc", "--target-dir", str(tmp_path / "target"),
+        "-Z", "build-std=core,alloc", "--target-dir", str(target_dir),
     ], cwd=program, env=env, check=True)
-    binary = tmp_path / "target" / target / "debug/server-runtime-test"
+    binary = target_dir / target / "debug/server-runtime-test"
     image = tmp_path / "rootfs.ext4"
     shutil.copy2(rootfs_image, image)
     installed = subprocess.run([

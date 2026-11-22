@@ -710,7 +710,6 @@ pub fn scheduler() -> ! {
         unsafe {
             interrupt_on();
         }
-        tty::service_transport();
         uart_poll::service();
         unsafe {
             interrupt_off();

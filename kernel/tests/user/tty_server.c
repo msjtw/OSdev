@@ -123,6 +123,9 @@ __attribute__((noreturn)) void _start(void) {
     check(sizeof(settings) == 36);
     check(tty_ioctl(child, 0x5401, &settings, sizeof(settings)) == 0);
     check(settings.iflag == 0400 && settings.lflag == 013 && settings.cc[0] == 3);
+    unsigned char original_settings[36];
+    for (word i = 0; i < 36; ++i)
+        original_settings[i] = ((unsigned char *)&settings)[i];
     settings.lflag = 0;
     settings.iflag = 0;
     settings.cflag = 0x12345678;
@@ -187,6 +190,10 @@ __attribute__((noreturn)) void _start(void) {
     check(sc(95, 0, 0, (word)siginfo, 4, 0) == 0);
     check(siginfo[3] == reader && siginfo[5] == 0);
     check(tty_ioctl(child, 0x5401, &returned, 36) == 0);
+#ifdef TTY_BOOTSTRAP
+    /* The embedded server now owns the shell's real terminal settings. */
+    check(tty_ioctl(child, 0x5402, original_settings, 36) == 0);
+#endif
 #ifndef TTY_BOOTSTRAP
     check(sc(129, child, 15, 0, 0, 0) == 0);
     for (;;) {

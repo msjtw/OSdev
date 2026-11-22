@@ -34,13 +34,25 @@ _start:
     li a7, 64                 /* write */
     ecall
 
+wait_for_handler:
+    la t0, handler_seen
+    lw t1, 0(t0)
+    bnez t1, handler_returned
+    /* A signal may arrive before this wait, including during READY's write.
+       A bounded ppoll prevents that race from leaving the test asleep forever. */
     li a0, 0
-    la a1, byte
-    li a2, 1
-    li a7, 63                 /* read: waits for terminal SIGINT */
+    li a1, 0
+    la a2, wait_timeout
+    li a3, 0
+    li a4, 0
+    li a7, 414                /* RV32 ppoll_time64 */
     ecall
-    li t0, -4                 /* EINTR after the handler returned */
-    bne a0, t0, failed
+    beqz a0, wait_for_handler
+    li t0, -4
+    beq a0, t0, wait_for_handler
+    j failed
+
+handler_returned:
 
     li a0, 1
     la a1, success
@@ -54,6 +66,9 @@ _start:
 handler:
     li t0, 2
     bne a0, t0, failed
+    la t0, handler_seen
+    li t1, 1
+    sw t1, 0(t0)
     li a0, 1
     la a1, handled
     li a2, handled_end-handled
@@ -85,6 +100,10 @@ sigint_mask:
 empty_mask:
     .word 0
     .word 0
+    .balign 8
+wait_timeout:
+    .word 0, 0                /* seconds */
+    .word 100000000, 0        /* 100 ms */
 ready:
     .ascii "M033_READY\n"
 ready_end:
@@ -96,8 +115,8 @@ success:
 success_end:
     .section .bss
     .align 2
-byte:
-    .space 1
+handler_seen:
+    .space 4
     .align 2
 previous_mask:
     .space 8

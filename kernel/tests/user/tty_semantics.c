@@ -67,7 +67,41 @@ __attribute__((noreturn)) void _start(void) {
     mode.lflag = (mode.lflag | 3) & ~010; /* ISIG | ICANON, no ECHO */
     set_mode();
 
-#if CASE == 1
+#if CASE == 4
+    int pipefd[2];
+    check(sc(59, (word)pipefd, 0, 0, 0, 0) == 0);
+    word child = sc(220, 17, 0, 0, 0, 0);
+    check((long)child >= 0);
+    if (child == 0) {
+        check(sc(57, pipefd[0], 0, 0, 0, 0) == 0);
+        char ready = 'R';
+        check(sc(64, pipefd[1], (word)&ready, 1, 0, 0) == 1);
+        read_exact(9);
+        const char expected[] = "parallel\n";
+        for (word i = 0; i < 9; ++i) check(bytes[i] == expected[i]);
+        ready = 'D';
+        check(sc(64, pipefd[1], (word)&ready, 1, 0, 0) == 1);
+        leave(0);
+    }
+    check(sc(57, pipefd[1], 0, 0, 0, 0) == 0);
+    char status;
+    check(sc(63, pipefd[0], (word)&status, 1, 0, 0) == 1 && status == 'R');
+    /* Allow the child to enter read; do not send UART input until parent I/O
+       and settings operations have completed. The pipe must remain empty. */
+    struct Timespec delay = {0, 300000000};
+    check(sc(414, 0, 0, (word)&delay, 0, 0) == 0);
+    struct PollFd pending = {pipefd[0], 1, -1};
+    struct Timespec zero = {0, 0};
+    check(sc(414, (word)&pending, 1, (word)&zero, 0, 0) == 0);
+    mode.iflag &= ~0400; /* Change ICRNL while the other client is waiting. */
+    set_mode();
+    SAY("IPC030_CONCURRENT_WAIT\n");
+    check(sc(63, pipefd[0], (word)&status, 1, 0, 0) == 1 && status == 'D');
+    word info[32];
+    check(sc(95, 0, 0, (word)info, 4, 0) == 0);
+    check(info[3] == child && info[5] == 0);
+    check(sc(57, pipefd[0], 0, 0, 0, 0) == 0);
+#elif CASE == 1
     /* Writable is acceptance readiness, not a promise to avoid an IPC wait. */
     check(poll_tty(1 | 4, 0, 4) == 1);
     check(sc(63, 0, (word)-1, 0, 0, 0) == 0);

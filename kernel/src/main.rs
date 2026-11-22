@@ -166,7 +166,6 @@ pub extern "C" fn main() -> ! {
             }
         }
 
-        process::tty::TTY::set_uart_pid(uart_pid);
         kernel.uart_poll.configure(uart_pid);
         kernel.tty_pid = Some(tty_pid);
     }

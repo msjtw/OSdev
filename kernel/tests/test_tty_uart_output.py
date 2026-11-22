@@ -72,7 +72,6 @@ def test_ctrl_c_stops_foreground_writer_and_later_output_works(qemu):
     qemu._send("yes IPC021_BUSY\n")
     qemu._wait_for_match(re.compile(rb"(?m)^IPC021_BUSY\r?$"), 5)
     qemu._send("\x03")
-    qemu._wait_for(b"/ #", 10)
     result = qemu.run("printf 'IPC021_AFTER_SIGNAL\\n'")
     assert result.status == 0, result.output
     assert re.search(r"(?m)^IPC021_AFTER_SIGNAL\r?$", result.output)
