@@ -9,10 +9,12 @@ fn tty_mechanism_numbers_are_distinct_from_transport() {
     assert_eq!(SYS_TTY_CALLER_SESSION, CUSTOM_BIT | 0x100);
     assert_eq!(SYS_TTY_VALIDATE_FOREGROUND, CUSTOM_BIT | 0x101);
     assert_eq!(SYS_TTY_SIGNAL_GROUP, CUSTOM_BIT | 0x102);
+    assert_eq!(SYS_TTY_PUBLISH_READINESS, CUSTOM_BIT | 0x103);
     let numbers = [
         SYS_IPC_CALL, SYS_IPC_RECEIVE, SYS_IPC_READ_PAYLOAD, SYS_IPC_REPLY,
         SYS_IPC_SUBMIT, SYS_IPC_RECEIVE_EVENT, SYS_IPC_CANCEL,
         SYS_TTY_CALLER_SESSION, SYS_TTY_VALIDATE_FOREGROUND, SYS_TTY_SIGNAL_GROUP,
+        SYS_TTY_PUBLISH_READINESS,
     ];
     for (index, number) in numbers.iter().enumerate() {
         assert_ne!(number & CUSTOM_BIT, 0);

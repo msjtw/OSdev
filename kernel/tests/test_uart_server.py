@@ -11,10 +11,21 @@ from conftest import ROOT
 from qemu_harness import QemuSession
 
 
+def test_uart_poll_bookkeeping(tmp_path):
+    binary = tmp_path / "uart-poll"
+    subprocess.run([
+        "rustc", "--edition", "2024", "--test",
+        str(ROOT / "tests/host/uart_poll.rs"), "-o", str(binary),
+    ], check=True)
+    subprocess.run([str(binary)], check=True)
+
+
 @pytest.mark.qemu
-@pytest.mark.parametrize("address", ["0x10000000", "268435456", "0x20000000", None],
-                         ids=["hex", "decimal", "alternate", "embedded-boot"])
-def test_uart_server_build_install_and_receive_loop(address, tmp_path, kernel_binary, request):
+@pytest.mark.parametrize("address,peer", [
+    ("0x10000000", False), ("268435456", False), ("0x20000000", False),
+    (None, False), ("0x10000000", True), ("0x20000000", True),
+], ids=["hex", "decimal", "alternate", "embedded-boot", "peer", "peer-alternate"])
+def test_uart_server_build_install_and_receive_loop(address, peer, tmp_path, kernel_binary, request):
     for tool in ("clang", "debugfs", "mkfs.ext4", "make"):
         if shutil.which(tool) is None:
             pytest.fail(f"UART server tests require host tool: {tool}")
@@ -46,6 +57,7 @@ def test_uart_server_build_install_and_receive_loop(address, tmp_path, kernel_bi
         "clang", "--target=riscv32-unknown-none-elf", "-march=rv32ima", "-mabi=ilp32",
         "-ffreestanding", "-fno-builtin", "-fno-stack-protector", "-msmall-data-limit=0",
         *(["-DUART_BOOTSTRAP"] if address is None else [f'-DUART_ADDRESS_ARG="{address}"']),
+        *(["-DUART_PEER"] if peer else []),
         "-O1", "-c", str(ROOT / "tests/user/uart_server.c"), "-o", str(obj),
     ], check=True)
     linker = os.path.join(sysroot, "lib", "rustlib", host, "bin", "rust-lld")
@@ -71,6 +83,9 @@ def test_uart_server_build_install_and_receive_loop(address, tmp_path, kernel_bi
             "/sbin/uart", "/sbin/uart ''", "/sbin/uart invalid",
             "/sbin/uart 0x100000000", "/sbin/uart 4294967296",
             "/sbin/uart -1", "/sbin/uart 0x10000000 extra",
+            "/sbin/uart 0x10000000 0", "/sbin/uart 0x10000000 ''",
+            "/sbin/uart 0x10000000 -1", "/sbin/uart 0x10000000 4294967296",
+            "/sbin/uart 0x10000000 0x100000000", "/sbin/uart 0x10000000 2 extra",
         )):
             assert session.run(command).status == 2
         result = session.run("/uart-probe", timeout=30)

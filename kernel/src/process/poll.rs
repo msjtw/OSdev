@@ -10,9 +10,7 @@ use super::{
     signals,
 };
 
-pub type PollEvents = i16;
-pub const POLLIN: PollEvents = 0x001;
-pub const POLLOUT: PollEvents = 0x004;
+pub use serverlib::tty::{PollEvents, POLLIN, POLLOUT};
 pub const POLLNVAL: PollEvents = 0x020;
 
 static POLL_CHANNEL: u8 = 0;

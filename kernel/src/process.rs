@@ -6,6 +6,8 @@ pub mod poll;
 pub mod signals;
 pub mod trap;
 pub(crate) mod tty;
+pub(crate) mod terminal;
+pub(crate) mod uart_poll;
 
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -709,6 +711,7 @@ pub fn scheduler() -> ! {
             interrupt_on();
         }
         tty::service_transport();
+        uart_poll::service();
         unsafe {
             interrupt_off();
         }

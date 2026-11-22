@@ -13,6 +13,7 @@ impl Error {
     pub const ENOMEM: Self = Self(12);
     pub const EFAULT: Self = Self(14);
     pub const EINVAL: Self = Self(22);
+    pub const ENOTTY: Self = Self(25);
     pub const EPIPE: Self = Self(32);
     pub const ENOSYS: Self = Self(38);
     pub const EOVERFLOW: Self = Self(75);

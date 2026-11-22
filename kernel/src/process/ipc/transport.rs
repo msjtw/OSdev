@@ -16,19 +16,19 @@ use super::{
     state::{CurrentReq, Request, RequestState, next_request_id},
 };
 
-/// Find a process by PID, excluding unused slots and zombies.
+// Find a process by PID, excluding unused slots and zombies.
 fn find_process(table: &mut [Process], pid: usize) -> Option<&mut Process> {
     table.iter_mut().find(|proc| {
         proc.pid == Some(pid) && !matches!(proc.state, ProcState::Unused | ProcState::Zombie)
     })
 }
 
-/// Identify the stable sleep channel used for this process's IPC events.
+// Identify the stable sleep channel used for this process's IPC events.
 fn channel(proc: &Process) -> usize {
     &proc.ipc as *const super::IpcState as usize
 }
 
-/// Enqueue a kernel-originated request, consuming its payload even on failure.
+// Enqueue a kernel-originated request, consuming its payload even on failure.
 pub fn kernel_send(
     kernel: &mut Kernel,
     destination: usize,
@@ -38,7 +38,7 @@ pub fn kernel_send(
     kernel_send_retained(kernel, destination, message, &mut data)
 }
 
-/// Enqueue kernel work while retaining its payload if the destination is absent or enqueue fails.
+// Enqueue kernel work while retaining its payload if the destination is absent or enqueue fails.
 pub fn kernel_send_retained(
     kernel: &mut Kernel,
     destination: usize,
@@ -62,7 +62,7 @@ pub fn kernel_send_retained(
     Ok(Some(id))
 }
 
-/// Perform an interruptible kernel-originated call with an owned payload buffer.
+// Perform an interruptible kernel-originated call with an owned payload buffer.
 // Like user_call, returns the server's raw result word without interpreting it.
 pub fn kernel_call(
     proc: &mut Process,
@@ -106,7 +106,7 @@ pub fn kernel_call(
     }
 }
 
-/// Collect a completed kernel request's result and owned buffer from its destination.
+// Collect a completed kernel request's result and owned buffer from its destination.
 pub fn kernel_read_reply(
     kernel: &mut Kernel,
     destination: usize,
@@ -122,7 +122,7 @@ pub fn kernel_read_reply(
     Some((result, request.kernel_data))
 }
 
-/// Cancel the current blocking call and revoke its destination request.
+// Cancel the current blocking call and revoke its destination request.
 pub fn cancel_call(kernel: &mut Kernel, proc: &mut Process) {
     let Some(current) = proc.ipc.pending_call else {
         return;
@@ -131,7 +131,7 @@ pub fn cancel_call(kernel: &mut Kernel, proc: &mut Process) {
     proc.ipc.finish_call(current.destination, current.id);
 }
 
-/// Remove a destination entry, including one retained in a zombie's inbox.
+// Remove a destination entry, including one retained in a zombie's inbox.
 fn remove_destination_request(kernel: &mut Kernel, proc: &mut Process, current: CurrentReq) {
     if proc.pid == Some(current.destination) {
         proc.ipc.inbox.remove(current.id);
@@ -144,21 +144,21 @@ fn remove_destination_request(kernel: &mut Kernel, proc: &mut Process, current: 
     }
 }
 
-/// Revoke one caller-owned outbox entry and discard any unconsumed completion.
+// Revoke one caller-owned outbox entry and discard any unconsumed completion.
 pub fn cancel_outgoing(kernel: &mut Kernel, proc: &mut Process, id: usize) -> Result<(), Errno> {
     let current = proc.ipc.outbox.remove(id).ok_or(Errno::ESRCH)?;
     remove_destination_request(kernel, proc, current);
     Ok(())
 }
 
-/// Revoke every outbox entry without allocating during exit or exec.
+// Revoke every outbox entry without allocating during exit or exec.
 pub fn cancel_outbox(kernel: &mut Kernel, proc: &mut Process) {
     while let Some(current) = proc.ipc.outbox.pop() {
         remove_destination_request(kernel, proc, current);
     }
 }
 
-/// Validate that a delivered request still has a live caller operation.
+// Validate that a delivered request still has a live caller operation.
 pub(super) fn current_request<'a>(
     kernel: &mut Kernel,
     server: &'a Process,
@@ -185,7 +185,25 @@ pub(super) fn current_request<'a>(
     Ok(request)
 }
 
-/// Enqueue a user request with its allocated ID and wake any live destination.
+// Resolve current session membership through a live delivered application request.
+pub fn caller_session(
+    kernel: &mut Kernel,
+    server: &Process,
+    id: usize,
+) -> Result<Option<usize>, Errno> {
+    let sender = current_request(kernel, server, id)?.message.sender;
+    if sender == KERNEL_SENDER_ID {
+        return Err(Errno::EINVAL);
+    }
+    if server.pid == Some(sender) {
+        return Ok(server.sid);
+    }
+    Ok(find_process(&mut kernel.process_table, sender)
+        .ok_or(Errno::ESRCH)?
+        .sid)
+}
+
+// Enqueue a user request using its previously allocated ID.
 fn enqueue_user_request(
     kernel: &mut Kernel,
     proc: &mut Process,
@@ -208,7 +226,7 @@ fn enqueue_user_request(
     }
 }
 
-/// Send a user request and wait interruptibly for its raw reply result.
+// Send a user request and wait interruptibly for its raw reply result.
 pub fn user_call(proc: &mut Process, destination: usize, message: Message) -> Result<usize, Errno> {
     {
         let mut kernel = KERNEL.get().unwrap().lock();
@@ -246,7 +264,7 @@ pub fn user_call(proc: &mut Process, destination: usize, message: Message) -> Re
     }
 }
 
-/// Wait interruptibly for a request and mark it delivered only after successful copy-out.
+// Wait interruptibly for a request and mark it delivered only after successful copy-out.
 pub fn serv_receive(proc: &mut Process, message_out: usize) -> Result<usize, Errno> {
     loop {
         let kernel = KERNEL.get().unwrap().lock();
@@ -272,7 +290,7 @@ pub fn serv_receive(proc: &mut Process, message_out: usize) -> Result<usize, Err
     }
 }
 
-/// Submit user work without waiting, reserving completion storage before publishing it.
+// Submit user work without waiting, reserving completion storage before publishing it.
 pub fn user_submit(
     proc: &mut Process,
     destination: usize,
@@ -291,7 +309,7 @@ pub fn user_submit(
     Ok(id)
 }
 
-/// Wait for a request or completion without consuming it on interruption or copy failure.
+// Wait for a request or completion without consuming it on interruption or copy failure.
 pub fn serv_receive_event(proc: &mut Process, event_out: usize) -> Result<(), Errno> {
     loop {
         let kernel = KERNEL.get().unwrap().lock();
@@ -311,7 +329,7 @@ pub fn serv_receive_event(proc: &mut Process, event_out: usize) -> Result<(), Er
     }
 }
 
-/// Validate payload bounds and compute the caller address for a requested slice.
+// Validate payload bounds and compute the caller address for a requested slice.
 fn payload_range(message: Message, offset: usize, length: usize) -> Result<usize, Errno> {
     let end = offset.checked_add(length).ok_or(Errno::EINVAL)?;
     if end > message.args[2] {
@@ -320,7 +338,7 @@ fn payload_range(message: Message, offset: usize, length: usize) -> Result<usize
     message.args[1].checked_add(offset).ok_or(Errno::EFAULT)
 }
 
-/// Copy a live request's source bytes into the receiving process's buffer.
+// Copy a live request's source bytes into the receiving process's buffer.
 pub fn serv_read_payload(
     proc: &mut Process,
     id: usize,
@@ -357,7 +375,7 @@ pub fn serv_read_payload(
     Ok(length)
 }
 
-/// Copy optional reply bytes and complete a live request, silently ignoring stale replies.
+// Copy optional reply bytes and complete a live request, silently ignoring stale replies.
 pub fn serv_reply(
     proc: &mut Process,
     id: usize,

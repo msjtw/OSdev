@@ -3,38 +3,42 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use serverlib::{Args, Error, abi::SYS_READ, ipc, runtime, syscall};
-use uart_driver::{handle, uart::Uart};
+use serverlib::{Args, Error, ipc, runtime, syscall, uart::POLL};
+use uart_driver::{service::Service, uart::Uart};
 
 serverlib::entry!(run);
 
 fn run(args: Args) -> ! {
-    if args.len() != 2 {
+    if !matches!(args.len(), 2 | 3) {
         syscall::exit(runtime::EXIT_USAGE);
     }
     let address = match args.parse_usize(1) {
         Ok(address) => address,
         Err(_) => syscall::exit(runtime::EXIT_USAGE),
     };
+    let tty_pid = if args.len() == 3 {
+        match args.parse_usize(2) {
+            Ok(pid) if pid != 0 => Some(pid),
+            _ => syscall::exit(runtime::EXIT_USAGE),
+        }
+    } else {
+        None
+    };
     let uart = unsafe { Uart::new(address) };
-    let mut buffer = Vec::new();
+    let mut service = Service::new(tty_pid);
     loop {
         let request = match ipc::receive() {
             Ok(request) => request,
             Err(Error::EINTR) => continue,
             Err(_) => syscall::exit(runtime::EXIT_FAILURE),
         };
-        let result = handle(&request.message, &uart, &mut buffer, |destination| {
-            ipc::read_payload(request.id, 0, destination)
-        });
-        let data = if request.message.operation == SYS_READ && result.is_ok() {
-            Some(buffer.as_slice())
-        } else {
-            None
-        };
-        if let Err(error) = ipc::reply(request.id, result, data) {
-            let _ = ipc::reply(request.id, Err(error), None);
+        if let Err(error) = service.accept(request, &uart, ipc::read_payload, ipc::reply) {
+            if ipc::reply(request.id, Err(error), None).is_err() {
+                syscall::exit(runtime::EXIT_FAILURE);
+            }
+        } else if request.message.operation != POLL && service.progress(&uart, ipc::reply).is_err()
+        {
+            syscall::exit(runtime::EXIT_FAILURE);
         }
     }
 }

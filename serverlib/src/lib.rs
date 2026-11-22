@@ -8,6 +8,8 @@
 )]
 
 pub mod abi;
+pub mod uart;
+pub mod tty;
 #[cfg(feature = "userspace")]
 pub mod allocator;
 pub mod error;

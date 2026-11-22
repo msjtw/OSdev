@@ -31,6 +31,8 @@ use crate::virtmemory::{PAGESIZE, PTE_R, PTE_U, PTE_W, RAMEND, UART};
 
 const UART_IMAGE: &[u8] =
     include_bytes!("../../uart_driver/target/riscv32ima-unknown-none-elf/release/uart_driver");
+const TTY_IMAGE: &[u8] =
+    include_bytes!("../../tty_driver/target/riscv32ima-unknown-none-elf/release/tty_driver");
 
 #[global_allocator]
 static HEAP_ALLOCATOR: allocator::LockedHeap<32> = allocator::LockedHeap::<32>::new();
@@ -107,20 +109,66 @@ pub extern "C" fn main() -> ! {
         init.kexec(String::from("/bin/busybox"), vec!["busybox", "sh", "-i"])
             .expect("failed to exec busybox");
         init.state = process::ProcState::Runnable;
+        let terminal_sid = init.sid.unwrap();
+        let foreground_pgid = init.pgid.unwrap();
 
-        // Start uart server
+        // prepare uart and tty servers
         let uart = kernel.allocproc().unwrap();
         unsafe { uart.lock.unlock_manual() };
+        let uart_pid = uart.pid.unwrap();
+        let tty = kernel.allocproc().unwrap();
+        unsafe { tty.lock.unlock_manual() };
+        let tty_pid = tty.pid.unwrap();
+
+
+        // UART server
+        // to fight borrow checker
         let uart_address = format!("{UART:#x}");
-        uart.kexec_bytes(UART_IMAGE, vec!["uart", &uart_address])
-            .expect("failed to exec uart");
+        let uart = kernel
+            .process_table
+            .iter_mut()
+            .find(|proc| proc.pid == Some(uart_pid))
+            .unwrap();
+        uart.kexec_bytes(
+            UART_IMAGE,
+            vec!["uart", &uart_address, &format!("{tty_pid}")],
+        )
+        .expect("failed to exec uart");
         // map the uart page
         uart.pagetable
             .pagetable
             .map(UART, UART, PAGESIZE, PTE_U | PTE_R | PTE_W)
             .expect("failed to map UART");
-        uart.state = process::ProcState::Runnable;
-        process::tty::TTY::set_uart_pid(uart.pid.unwrap());
+
+        // TTY server
+        let terminal_sid_arg = format!("{terminal_sid}");
+        let foreground_arg = format!("{foreground_pgid}");
+        let tty = kernel
+            .process_table
+            .iter_mut()
+            .find(|proc| proc.pid == Some(tty_pid))
+            .unwrap();
+        tty.kexec_bytes(
+            TTY_IMAGE,
+            vec![
+                "tty",
+                &format!("{uart_pid}"),
+                &terminal_sid_arg,
+                &foreground_arg,
+            ],
+        )
+        .expect("failed to exec tty");
+
+        // once all servers are ready mark them runnable
+        for proc in &mut kernel.process_table {
+            if proc.pid == Some(uart_pid) || proc.pid == Some(tty_pid) {
+                proc.state = process::ProcState::Runnable;
+            }
+        }
+
+        process::tty::TTY::set_uart_pid(uart_pid);
+        kernel.uart_poll.configure(uart_pid);
+        kernel.tty_pid = Some(tty_pid);
     }
     log::info!("into the schedulervere");
     process::scheduler();

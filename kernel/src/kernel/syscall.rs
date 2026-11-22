@@ -5,6 +5,7 @@ mod sys_proc;
 mod sys_signals;
 mod sys_shutdown;
 mod sys_time;
+mod sys_tty;
 
 use crate::{
     kernel::syscall::{
@@ -75,11 +76,6 @@ pub const SYS_CLOCK_GETRES_TIME64: usize = 406;
 pub const SYS_CLOCK_NANOSLEEP_TIME64: usize = 407;
 pub const SYS_PPOLL_TIME64: usize = 414;
 
-pub use crate::process::ipc::abi::{
-    SYS_IPC_CALL, SYS_IPC_READ_PAYLOAD, SYS_IPC_RECEIVE, SYS_IPC_REPLY,
-    SYS_IPC_SUBMIT, SYS_IPC_RECEIVE_EVENT, SYS_IPC_CANCEL,
-};
-
 // NOTE:
 // syscall number: a7
 // arguments: a0-a5
@@ -136,13 +132,19 @@ pub fn syscall(proc: &mut Process) {
         SYS_CLOCK_GETRES_TIME64 => sys_clock_getres_time64(proc),
         SYS_CLOCK_NANOSLEEP_TIME64 => sys_clock_nanosleep_time64(proc),
         SYS_PPOLL_TIME64 => sys_ppoll(proc),
-        SYS_IPC_CALL => sys_ipc_call(proc),
-        SYS_IPC_RECEIVE => sys_ipc_receive(proc),
-        SYS_IPC_READ_PAYLOAD => sys_ipc_read_payload(proc),
-        SYS_IPC_REPLY => sys_ipc_reply(proc),
-        SYS_IPC_SUBMIT => sys_ipc_submit(proc),
-        SYS_IPC_RECEIVE_EVENT => sys_ipc_receive_event(proc),
-        SYS_IPC_CANCEL => sys_ipc_cancel(proc),
+
+        // microkernel syscalls
+        serverlib::abi::SYS_IPC_CALL => sys_ipc_call(proc),
+        serverlib::abi::SYS_IPC_RECEIVE => sys_ipc_receive(proc),
+        serverlib::abi::SYS_IPC_READ_PAYLOAD => sys_ipc_read_payload(proc),
+        serverlib::abi::SYS_IPC_REPLY => sys_ipc_reply(proc),
+        serverlib::abi::SYS_IPC_SUBMIT => sys_ipc_submit(proc),
+        serverlib::abi::SYS_IPC_RECEIVE_EVENT => sys_ipc_receive_event(proc),
+        serverlib::abi::SYS_IPC_CANCEL => sys_ipc_cancel(proc),
+        serverlib::abi::SYS_TTY_CALLER_SESSION => sys_tty::sys_tty_caller_session(proc),
+        serverlib::abi::SYS_TTY_VALIDATE_FOREGROUND => sys_tty::sys_tty_validate_foreground(proc),
+        serverlib::abi::SYS_TTY_SIGNAL_GROUP => sys_tty::sys_tty_signal_group(proc),
+        serverlib::abi::SYS_TTY_PUBLISH_READINESS => sys_tty::sys_tty_publish_readiness(proc),
         _ => {
             log::logln!("unimplemented syscall: {}", sys_num);
             proc.trapframe.a0 = Errno::ENOSYS.into();

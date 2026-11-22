@@ -11,6 +11,7 @@ pub const SYS_IPC_CANCEL: usize = CUSTOM_BIT | 7;
 pub const SYS_TTY_CALLER_SESSION: usize = CUSTOM_BIT | 0x100;
 pub const SYS_TTY_VALIDATE_FOREGROUND: usize = CUSTOM_BIT | 0x101;
 pub const SYS_TTY_SIGNAL_GROUP: usize = CUSTOM_BIT | 0x102;
+pub const SYS_TTY_PUBLISH_READINESS: usize = CUSTOM_BIT | 0x103;
 
 pub const IPC_EVENT_REQUEST: usize = 0;
 pub const IPC_EVENT_COMPLETION: usize = 1;

@@ -54,6 +54,8 @@ impl Cpu {
 
 #[derive(Default)]
 pub struct Kernel {
+    pub tty_pid: Option<usize>,
+    pub uart_poll: crate::process::uart_poll::state::PollState,
     pub kvm: Option<virtmemory::Kvm>,
     pub process_table: Vec<Process>,
     pub ipc_req_id: Counter,
