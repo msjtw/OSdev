@@ -16,18 +16,7 @@ static DISCOVERED: Once<SharedBlockDevice> = Once::new();
 static TIMER_TICKS: AtomicUsize = AtomicUsize::new(0);
 const PERIODIC_FLUSH_TICKS: usize = 10;
 
-pub trait BlockDevice {
-    type Error;
-
-    fn block_size(&self) -> usize;
-    fn block_count(&self) -> u64;
-
-    fn read_block(&mut self, block_idx: u64, buf: &mut [u8]) -> Result<(), Self::Error>;
-
-    fn write_block(&mut self, block_idx: u64, buf: &[u8]) -> Result<(), Self::Error>;
-
-    fn flush(&mut self) -> Result<(), Self::Error>;
-}
+pub use blk_driver::BlockDevice;
 
 struct CacheEntry {
     block_idx: u64,
@@ -183,6 +172,12 @@ impl<D: BlockDevice<Error = ()>> BlockDevice for CachedBlockDevice<D> {
 }
 
 pub fn discover() -> Option<SharedBlockDevice> {
+    blk_driver::set_logger(|level, args| match level {
+        blk_driver::Level::Trace => crate::log::trace!("{}", args),
+        blk_driver::Level::Debug => crate::log::debug!("{}", args),
+        blk_driver::Level::Info => crate::log::info!("{}", args),
+        blk_driver::Level::Error => crate::log::error!("{}", args),
+    });
     if let Some(device) = DISCOVERED.get() {
         return Some(Arc::clone(device));
     }
@@ -209,7 +204,7 @@ pub fn discover() -> Option<SharedBlockDevice> {
         }
 
         log::info!("virtio-blk: found block device at 0x{base:08x}");
-        let mut blk = Box::new(VirtioMmioBlock::new(base));
+        let mut blk = Box::new(VirtioMmioBlock::new(base).ok()?);
         if blk.init().is_err() {
             log::error!("virtio-blk: initialization failed at 0x{base:08x}");
             return None;

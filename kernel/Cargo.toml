@@ -7,6 +7,7 @@ edition = "2024"
 fs-write-probe = []
 
 [dependencies]
+blk_driver = { path = "../blk_driver" }
 serverlib = { path = "../serverlib", default-features = false }
 spin = "0.9"
 buddy_system_allocator = "0.12.0"

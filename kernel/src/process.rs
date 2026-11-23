@@ -7,6 +7,7 @@ pub mod signals;
 pub mod trap;
 pub(crate) mod tty;
 pub(crate) mod terminal;
+pub(crate) mod blk_dma;
 pub(crate) mod uart_poll;
 
 use alloc::{string::String, vec::Vec};

@@ -8,6 +8,7 @@
 )]
 
 pub mod abi;
+pub mod blk;
 pub mod uart;
 pub mod tty;
 #[cfg(feature = "userspace")]

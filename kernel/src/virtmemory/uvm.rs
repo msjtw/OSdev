@@ -25,6 +25,9 @@ pub struct Uvm {
     pub prog_break: usize,
     pub mmap_next: usize,
     page_list: Vec<usize>,
+    // blk performs dma reads and the server needs a page for that
+    // i can be solved other ways but I think this it simplest
+    blk_dma: Option<(usize, usize)>,
     size: usize,
     pub(crate) pagetable: PageTable,
 }
@@ -64,6 +67,26 @@ impl Drop for Uvm {
 }
 // The address space is continuous and starts at virt 0x80000000
 impl Uvm {
+    // Install external BLK pages below mmap space without adding owned frames.
+    pub(crate) fn map_blk_dma(&mut self, va: usize, pa: usize, size: usize) -> Result<(), ()> {
+        if self.blk_dma.is_some() { return Err(()); }
+        let end = va.checked_add(size).ok_or(())?;
+        if va < super::USER_START || end > USER_MMAP_BASE || size == 0
+            || va % PAGESIZE != 0 || pa % PAGESIZE != 0 || size % PAGESIZE != 0 {
+            return Err(());
+        }
+        pa.checked_add(size).ok_or(())?;
+        for address in (va..end).step_by(PAGESIZE) {
+            if self.pagetable.lookup(address).is_some() { return Err(()); }
+        }
+        if self.pagetable.map(va, pa, size, PTE_U | PTE_R | PTE_W).is_err() {
+            self.pagetable.unmap(va, size, false)?;
+            return Err(());
+        }
+        self.blk_dma = Some((va, end));
+        Ok(())
+    }
+
     pub fn new() -> Result<Uvm, ()> {
         let uvm = Uvm {
             end: 0,
@@ -71,6 +94,7 @@ impl Uvm {
             prog_break: 0,
             mmap_next: USER_MMAP_BASE,
             page_list: Vec::new(),
+            blk_dma: None,
             size: 0,
             pagetable: PageTable::default(),
         };
@@ -233,6 +257,10 @@ impl Uvm {
     // it creates virt address space from USERBASE to size
     // allocates memory at virtual address addr of size
     fn alloc(&mut self, addr: usize, size: usize, perm: usize) -> Result<(), ()> {
+        let end = addr.checked_add(size).ok_or(())?;
+        if self.blk_dma.is_some_and(|(start, limit)| addr < limit && end > start) {
+            return Err(());
+        }
         let mut allocated = 0;
         let original_end = self.end;
         while allocated < size {
@@ -288,6 +316,9 @@ impl Uvm {
             return Err(());
         }
         let end = addr.checked_add(size).ok_or(())?;
+        if self.blk_dma.is_some_and(|(start, limit)| addr < limit && end > start) {
+            return Err(());
+        }
 
         self.pagetable.unmap(addr, size, true)?;
 

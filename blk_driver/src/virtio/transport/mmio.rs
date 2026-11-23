@@ -1,5 +1,4 @@
-use crate::drivers::virtio::transport::Transport;
-use crate::{drivers::virtio::status, log};
+use crate::virtio::transport::Transport;
 
 // MMIO registers
 const MMIO_MAGIC: usize = 0x000;
