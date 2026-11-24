@@ -1,5 +1,6 @@
-/target/
+/rarget/
 /Cargo.lock
 examples/
 docs/
-tests/
+tests
+target

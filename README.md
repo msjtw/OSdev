@@ -17,14 +17,12 @@ make -C busybox-1.38.0 -j"$(nproc)"
 The saved configuration builds a statically linked RV32 executable using musl.
 The binary is `busybox-1.38.0/busybox`.
 
-To create the kernel's rootfs image (requires `mkfs.ext4` from e2fsprogs):
+To create the kernel's rootfs image with programs from busybox (requires `mkfs.ext4` from e2fsprogs):
 
 ```sh
 ./kernel/mkrootfs.sh
 ```
 
-This installs BusyBox with hard-linked applets, as required by the kernel's
-current filesystem implementation.
 
 ### Changing the configuration
 
